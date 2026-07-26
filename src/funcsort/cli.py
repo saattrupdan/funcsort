@@ -47,4 +47,4 @@ def main(path: Path = Path("."), fix: bool = False, verbose: bool = False) -> No
             )
             raise SystemExit(1)
     else:
-        print("All files sorted")
+        print("All files already sorted")
