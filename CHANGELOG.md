@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for class references in type annotations (classes now sorted before
   functions using them)
 - Support for generic type annotations (`list[T]`, `dict[K, V]`, etc.)
+- Support for type hints in class bodies (class attributes with type annotations)
 
 ### Changed
 
