@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Comprehensive test suite (`tests/test_sorting.py`) with 47 tests covering:
+- Comprehensive test suite (`tests/test_sorting.py`) with 50 tests covering:
   - Module-level functions and call hierarchy
   - Class methods and `__init__` ordering
   - Decorator definitions before usage
