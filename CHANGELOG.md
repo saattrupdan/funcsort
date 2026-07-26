@@ -28,9 +28,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Type alias comment format (no colon, no trailing period)
 - Consolidated `_Statement` type alias to single location
 - Fixed `ty` compatibility for libcst visitor pattern
-
-## v0.0.0 - 2025-01-24
-
-### Added
-
-- Initial release of funcsort
