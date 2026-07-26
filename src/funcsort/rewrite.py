@@ -45,23 +45,40 @@ def rewrite_module(
         else:
             other_fixed.append(node)
 
-    # Order: docstring, imports, sorted units (functions/classes/constants), __main__ blocks
+    # Order: docstring, imports, comments, sorted units, __main__ blocks
     new_body.extend(docstring)
     new_body.extend(imports)
+    new_body.extend(other_fixed)  # Preserves standalone comments
 
-    # Add blank line after imports if there are sorted units
+    # Add blank line after imports/comments before sorted units
     if ordered_names:
         new_body.append(cst.EmptyLine())
 
-    # Add all sorted units in dependency order
-    # Wrap assignments in SimpleStatementLine
-    for name in ordered_names:
+    # Add all sorted units in dependency order, with spacing
+    # Strip leading empty lines from all nodes since we control spacing
+    prev_was_constant = False
+    for i, name in enumerate(ordered_names):
         unit = unit_map[name]
-        if m.matches(unit.node, m.FunctionDef()) or m.matches(unit.node, m.ClassDef()):
-            new_body.append(unit.node)
-        elif isinstance(unit.node, (cst.Assign, cst.AnnAssign)):
+        is_constant = isinstance(unit.node, (cst.Assign, cst.AnnAssign))
+
+        # Add blank line between constants and functions
+        if i > 0 and prev_was_constant != is_constant:
+            if is_constant or i > 0:  # Always add between different types
+                new_body.append(cst.EmptyLine())
+
+        if is_constant:
             # Wrap assignment in SimpleStatementLine
             new_body.append(cst.SimpleStatementLine(body=[unit.node]))
+        elif m.matches(unit.node, m.FunctionDef()):
+            assert isinstance(unit.node, cst.FunctionDef)
+            func = unit.node.with_changes(leading_lines=())
+            new_body.append(func)
+        elif m.matches(unit.node, m.ClassDef()):
+            assert isinstance(unit.node, cst.ClassDef)
+            cls = unit.node.with_changes(leading_lines=())
+            new_body.append(cls)
+
+        prev_was_constant = is_constant
 
     # Finally __main__ blocks
     new_body.extend(main_blocks)
