@@ -8,7 +8,7 @@ class TestModuleLevelFunctions:
     """Tests for module-level function sorting."""
 
     def test_caller_with_entry_point(self):
-        """Entry point (main) comes first only if it has no dependencies."""
+        """Entry point (main) comes first among functions, even if it has dependencies."""
         code = '''
 def main():
     return helper()
@@ -18,8 +18,8 @@ def helper():
     return 42
 '''
         result = sort_source(code)
-        # main depends on helper, so helper comes first
-        assert result.index("def helper():") < result.index("def main():")
+        # main comes first as entry point, helper after
+        assert result.index("def main():") < result.index("def helper():")
 
     def test_callee_before_caller_no_entry(self):
         """Without main, callee comes before caller."""
@@ -329,7 +329,7 @@ class TestNoOp:
     """Tests for cases that should not change."""
 
     def test_already_sorted_with_entry(self):
-        """Already sorted code - entry point comes first only without deps."""
+        """Already sorted code - entry point first."""
         code = '''
 def main():
     return helper()
@@ -339,8 +339,8 @@ def helper():
     return 42
 '''
         result = sort_source(code)
-        # main depends on helper, so helper comes first
-        assert result.index("def helper():") < result.index("def main():")
+        # main comes first as entry point
+        assert result.index("def main():") < result.index("def helper():")
 
     def test_decorators_preserved_when_sorted(self):
         """Decorators should stay on their functions when already sorted."""

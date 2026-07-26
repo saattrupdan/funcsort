@@ -61,24 +61,19 @@ def order_by_call_hierarchy(
             visit(name)
 
     # Move entry point to front among functions only (constants stay at front)
-    # Entry point can depend on constants but should come before other functions
-    # that it doesn't depend on
+    # Entry point comes FIRST among functions, even if it has dependencies
+    # (dependencies will still be ordered correctly: callees before callers within the remaining list)
     if entry and entry in result and function_names:
-        # Find FUNCTION dependencies only
-        entry_deps = edges.get(entry, set()) & function_names
+        # Find first function position in result
+        first_func_idx = None
+        for i, item in enumerate(result):
+            if item in function_names:
+                first_func_idx = i
+                break
         
-        if not entry_deps:
-            # Entry has no function dependencies - move it to front among functions
-            # Find first function in result (that's not a constant)
-            first_func_idx = None
-            for i, item in enumerate(result):
-                if item in function_names:
-                    first_func_idx = i
-                    break
-            
-            # Only move if entry is not already the first function
-            if first_func_idx is not None and result[first_func_idx] != entry:
-                result.remove(entry)
-                result.insert(first_func_idx, entry)
+        # Move entry to front among functions (if not already there)
+        if first_func_idx is not None and result[first_func_idx] != entry:
+            result.remove(entry)
+            result.insert(first_func_idx, entry)
 
     return result
