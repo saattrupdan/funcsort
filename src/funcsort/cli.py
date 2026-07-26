@@ -41,8 +41,8 @@ def main(path: Path = Path("."), fix: bool = False, verbose: bool = False) -> No
             print(f"✓ Fixed {len(changed)} file(s)")
         else:
             for file_path in changed:
-                logger.warning("Would reorder: %s", file_path)
-            logger.warning("✗ %d file(s) need sorting (use --fix)", len(changed))
+                logger.warning(f"Would reorder: {file_path}")
+            logger.warning(f"✗ {len(changed)} file(s) need sorting (use --fix)")
             raise SystemExit(1)
     else:
         print("✓ All files already sorted")
