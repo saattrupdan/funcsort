@@ -372,3 +372,42 @@ def helper():
 '''
         result = sort_source(code)
         assert "import os" in result
+
+
+class TestConstantsAndImports:
+    """Tests for handling constants that depend on functions."""
+
+    def test_function_before_constant_using_it(self):
+        """Functions should come before constants that call them."""
+        code = '''"""Module docstring."""
+
+import typing as t
+
+TOOL_CALLING_TEMPLATE = {"key": "val"}
+
+
+def _reformat(s: str) -> str:
+    return s.replace("{", "{{")
+
+
+TOOL_CALLING_TEMPLATES = {
+    "en": _reformat(TOOL_CALLING_TEMPLATE),
+}
+'''
+        result = sort_source(code)
+        # _reformat should come before TOOL_CALLING_TEMPLATES
+        assert result.index("def _reformat") < result.index("TOOL_CALLING_TEMPLATES =")
+        # Docstring and imports should come before functions
+        assert result.index('"""Module docstring."""') < result.index("def _reformat")
+        assert result.index("import typing") < result.index("def _reformat")
+
+    def test_imports_before_functions(self):
+        """Imports should always come before functions."""
+        code = '''import os
+
+
+def main():
+    return os.getcwd()
+'''
+        result = sort_source(code)
+        assert result.index("import os") < result.index("def main")
