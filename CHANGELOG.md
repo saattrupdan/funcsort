@@ -12,11 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive test suite (`tests/test_sorting.py`) covering module-level functions,
   class methods, decorators, cycles, and edge cases
 - Support for detecting method calls (`self.method()`) within classes
+- Support for class references in type annotations (classes now sorted before
+  functions using them)
+- Support for generic type annotations (`list[T]`, `dict[K, V]`, etc.)
 
 ### Changed
 
 - Function ordering now puts definitions before usages (callees before callers)
 - Module rewrite order: docstring → imports → functions → constants → `__main__` blocks
+- Classes are now sorted along with functions based on type hint dependencies
 - Updated AGENTS.md with correct function ordering conventions
 
 ### Fixed
