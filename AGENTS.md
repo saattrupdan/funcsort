@@ -93,7 +93,7 @@ No tests (explicit requirement #5).
   - Class references in type hints: class before dependent
   - Class instantiations in body: class before dependent
   - Decorator definitions before their usages
-- Entry points (`main`, `__init__`) moved to front of their category
+- Entry points (`main`, `__init__`) first among functions/classes (even with dependencies)
 - Ties broken alphabetically
 
 ### Commit messages
