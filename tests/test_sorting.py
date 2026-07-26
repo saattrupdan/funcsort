@@ -574,3 +574,20 @@ class Item:
 '''
         result = sort_source(code)
         assert result.index("class Item:") < result.index("class Container:")
+
+    def test_class_call_in_body(self):
+        """Classes instantiated in class body should come first."""
+        code = '''
+class DummyBenchmarkConfig:
+    """Dummy benchmark config for testing."""
+
+    device = DummyDevice()
+
+
+class DummyDevice:
+    """Dummy device for testing."""
+
+    type = "cpu"
+'''
+        result = sort_source(code)
+        assert result.index("class DummyDevice:") < result.index("class DummyBenchmarkConfig:")

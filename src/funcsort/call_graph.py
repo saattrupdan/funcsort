@@ -180,29 +180,65 @@ def extract_class_bases(class_node: cst.ClassDef) -> set[str]:
     return refs
 
 
-def extract_class_body_type_refs(class_node: cst.ClassDef) -> set[str]:
-    """Extract type references from class body annotations.
+def _extract_names_from_assign_value(value: cst.BaseExpression) -> set[str]:
+    """Extract class names referenced in an assignment value.
 
-    Extracts bare Name nodes from annotated assignments in the class body
-    (e.g., `item: Item` or `data: list[Record]`).
+    Handles Call nodes (e.g., `DummyDevice()`) and other expressions.
+
+    Args:
+        value: The assignment value expression.
+
+    Returns:
+        Set of class/type names referenced.
+    """
+    refs: set[str] = set()
+
+    # Handle function/method calls like `DummyDevice()`
+    if m.matches(value, m.Call()):
+        assert isinstance(value, cst.Call)
+        func = value.func
+        # Extract bare function name
+        if m.matches(func, m.Name()):
+            assert isinstance(func, cst.Name)
+            refs.add(func.value)
+        # Extract method calls like `self.method()` - just the method name
+        elif m.matches(func, m.Attribute()):
+            assert isinstance(func, cst.Attribute)
+            if isinstance(func.attr, cst.Name):
+                refs.add(func.attr.value)
+
+    return refs
+
+
+def extract_class_body_type_refs(class_node: cst.ClassDef) -> set[str]:
+    """Extract type references from class body annotations and assignments.
+
+    Extracts bare Name nodes from:
+    - Annotated assignments in the class body (e.g., `item: Item`)
+    - Regular assignments where value is a class call (e.g., `device = DummyDevice()`)
 
     Args:
         class_node: The class definition node.
 
     Returns:
-        Set of type/class names referenced in class body annotations.
+        Set of type/class names referenced in class body.
     """
     refs: set[str] = set()
 
     for stmt in class_node.body.body:
-        # Annotated assignments are wrapped in SimpleStatementLine
+        # Statements are wrapped in SimpleStatementLine
         if m.matches(stmt, m.SimpleStatementLine()):
             assert isinstance(stmt, cst.SimpleStatementLine)
             for inner_stmt in stmt.body:
+                # Handle annotated assignments like `item: Item`
                 if m.matches(inner_stmt, m.AnnAssign()):
                     assert isinstance(inner_stmt, cst.AnnAssign)
                     annotation = inner_stmt.annotation
                     if annotation:
                         refs.update(_extract_names_from_annotation(annotation.annotation))
+                # Handle regular assignments like `device = DummyDevice()`
+                elif m.matches(inner_stmt, m.Assign()):
+                    assert isinstance(inner_stmt, cst.Assign)
+                    refs.update(_extract_names_from_assign_value(inner_stmt.value))
 
     return refs
