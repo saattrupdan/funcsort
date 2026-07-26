@@ -48,11 +48,20 @@ def rewrite_module(
     # Order: docstring, imports, comments, sorted units, __main__ blocks
     new_body.extend(docstring)
     new_body.extend(imports)
-    new_body.extend(other_fixed)  # Preserves standalone comments
+    # other_fixed includes standalone comments and module-level statements
+    # (like logging.basicConfig()) - need 2 blank lines after imports
+    if other_fixed:
+        new_body.append(cst.EmptyLine())
+        new_body.append(cst.EmptyLine())
+        for node in other_fixed:
+            # Strip leading lines from module-level statements
+            if isinstance(node, cst.SimpleStatementLine):
+                node = node.with_changes(leading_lines=())
+            new_body.append(node)
 
     # Add sorted units in dependency order, with proper spacing
-    # PEP 8: 2 blank lines before functions/classes, 1 blank line before constants
-    # Asserts (names starting with _assert) don't get blank lines before them (like inline statements)
+    # PEP 8: 2 blank lines before functions/classes, constants grouped together
+    # Asserts (names starting with _assert) don't get blank lines before them
     started = False
     prev_is_constant = False
     for i, name in enumerate(ordered_names):
@@ -62,15 +71,11 @@ def rewrite_module(
 
         # Determine spacing before this unit
         if not started:
-            # First unit: blank lines depend on type
-            if is_constant or is_assert:
-                new_body.append(cst.EmptyLine())  # 1 blank line for constants/asserts
-            else:
-                new_body.append(cst.EmptyLine())  # First blank line
-                new_body.append(cst.EmptyLine())  # Second blank line for functions
+            # First unit: need 2 blank lines after imports/other_fixed
+            new_body.append(cst.EmptyLine())
+            new_body.append(cst.EmptyLine())
             started = True
             prev_is_constant = is_constant
-            # No continue - we still need to add the unit
         elif is_assert:
             # Asserts don't get blank lines - they stick to previous item
             pass

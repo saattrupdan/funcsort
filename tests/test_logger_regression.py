@@ -87,3 +87,37 @@ def _helper():
             f"logger before main. logger at {logger_idx}, main at {main_idx}"
         assert main_idx < helper_idx, \
             f"main before _helper. main at {main_idx}, _helper at {helper_idx}"
+
+    def test_blank_line_between_imports_and_module_level_call(self):
+        """Regression: module-level statements after imports need 2 blank lines (PEP 8).
+        
+        Bug: `logging.basicConfig(...)` was placed directly after imports
+        without the required blank line separator.
+        
+        PEP 8 requires 2 blank lines between imports and module-level code.
+        """
+        code = '''
+import logging
+
+logging.basicConfig(level=logging.INFO)
+
+logger = logging.getLogger(__name__)
+
+
+def main() -> None:
+    logger.info("test")
+'''
+        result = sort_source(code)
+        lines = result.split('\n')
+        # Find the basicConfig line
+        for i, line in enumerate(lines):
+            if 'basicConfig' in line:
+                # Two lines before should be blank (after imports)
+                assert lines[i - 1] == '', \
+                    f"Expected blank line before basicConfig at line {i}, got: {repr(lines[i - 1])}"
+                assert lines[i - 2] == '', \
+                    f"Expected two blank lines before basicConfig at line {i}, got: {repr(lines[i - 2])}"
+                # Line before blanks should be import (not blank)
+                assert 'import' in lines[i - 3], \
+                    f"Expected import before blanks at line {i-3}, got: {repr(lines[i - 3])}"
+                break
