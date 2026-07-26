@@ -61,7 +61,7 @@ Add to your `.pre-commit-config.yaml`:
 
 ```yaml
 - repo: https://github.com/saattrupdan/funcsort
-  rev: v0.0.0  # Use the latest tag
+  rev: v0.1.0  # Use the latest tag
   hooks:
     - id: funcsort
       args: [--fix]  # Automatically fix sorting
