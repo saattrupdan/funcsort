@@ -86,8 +86,9 @@ No tests (explicit requirement #5).
 
 ### Function ordering
 
-- `main` functions first
-- Callers before callees
+- `main` functions first (entry point always at top)
+- Callees before callers (definitions before usages)
+- Decorator definitions before their usages
 - Ties broken alphabetically
 - For classes: `__init__` first, then same call hierarchy rules
 
