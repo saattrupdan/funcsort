@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Entry point (`main`) now always comes first among functions (for readability)
 - Comments on constant definitions now preserved during sorting
 - Assert statements now sorted after their dependencies
 - Entry point (`main`) now correctly prioritised among functions only (not constants)
