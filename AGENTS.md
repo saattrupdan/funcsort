@@ -1,6 +1,8 @@
 # Funcsort
 
-CLI tool and pre-commit hook that automatically sorts Python functions and methods by call hierarchy. Published at https://github.com/saattrupdan/funcsort.
+CLI tool and pre-commit hook that automatically sorts Python functions and
+methods by call hierarchy. Published at
+<https://github.com/saattrupdan/funcsort>.
 
 ## Stack
 
@@ -13,7 +15,7 @@ CLI tool and pre-commit hook that automatically sorts Python functions and metho
 
 ## Layout
 
-```
+```text
 funcsort/
 ├── AGENTS.md              # Agent/contributor orientation (this file)
 ├── CHANGELOG.md           # Version history
@@ -98,6 +100,7 @@ Conventional Commits format:
 ```
 
 Types:
+
 - `feat`: New feature
 - `fix`: Bug fix
 - `docs`: Documentation only
@@ -114,17 +117,23 @@ Types:
 
 ## Gotchas
 
-- **libcst required**: Standard `ast` module doesn't preserve comments/decorators. All parsing uses `libcst`.
-- **No cross-module analysis**: funcsort only sorts within a single file. Cross-file dependencies are ignored.
+- **libcst required**: Standard `ast` module doesn't preserve
+  comments/decorators. All parsing uses `libcst`.
+- **No cross-module analysis**: funcsort only sorts within a single
+  file. Cross-file dependencies are ignored.
 - **Nested functions ignored**: Only top-level functions and class methods are sorted.
 - **Exit codes**:
   - `0`: Success (files sorted or already correct)
   - `1`: Files need sorting (check mode without `--fix`)
   - `0`: After `--fix` is applied (even if changes were made)
 - **`.gitignore` support**: Files/directories in `.gitignore` are automatically skipped.
-- **`original_node` parameter**: Required by libcst's visitor pattern — keep the name even if unused (rename breaks `ty`'s override checking). Suppress with `# noqa: ARG002`.
-- **Type alias location**: `_Statement` defined in `models.py` only — import from there, don't redefine.
-- **Pre-commit hook**: Default `pass_filenames: false` runs on all `.py` files. Set to `true` for staged files only.
+- **`original_node` parameter**: Required by libcst's visitor pattern
+  — keep the name even if unused (rename breaks `ty`'s override checking).
+  Suppress with `# noqa: ARG002`.
+- **Type alias location**: `_Statement` defined in `models.py` only —
+  import from there, don't redefine.
+- **Pre-commit hook**: Default `pass_filenames: false` runs on all
+  `.py` files. Set to `true` for staged files only.
 - **Unicode symbols in output**:
   - `✓` for success
   - `✗` for check failures
