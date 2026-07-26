@@ -377,8 +377,12 @@ def helper():
 class TestConstantsAndImports:
     """Tests for handling constants that depend on functions."""
 
-    def test_constants_before_functions(self):
-        """Constants should always appear before functions (after imports)."""
+    def test_constants_sorted_by_dependencies(self):
+        """Constants should be ordered by their dependencies.
+
+        Constants that don't depend on functions come before functions.
+        Constants that depend on functions come after those functions.
+        """
         code = '''"""Module docstring."""
 
 import typing as t
@@ -395,10 +399,11 @@ TOOL_CALLING_TEMPLATES = {
 }
 '''
         result = sort_source(code)
-        # Constants should come before functions
+        # TOOL_CALLING_TEMPLATE (no deps) comes before functions
         assert result.index("TOOL_CALLING_TEMPLATE =") < result.index("def _reformat")
-        assert result.index("TOOL_CALLING_TEMPLATES =") < result.index("def _reformat")
-        # Docstring and imports should come before constants
+        # TOOL_CALLING_TEMPLATES (depends on _reformat) comes after
+        assert result.index("def _reformat") < result.index("TOOL_CALLING_TEMPLATES =")
+        # Docstring and imports should come first
         assert result.index('"""Module docstring."""') < result.index("TOOL_CALLING_TEMPLATE")
         assert result.index("import typing") < result.index("TOOL_CALLING_TEMPLATE")
 
@@ -624,3 +629,109 @@ class Base:
 '''
         result = sort_source(code)
         assert result.index("class Base:") < result.index("DEPENDENTS:")
+
+
+class TestRegressionBugs:
+    """Regression tests for reported bugs - ensures they don't come back."""
+
+    def test_decorator_definition_before_usage(self):
+        """Regression: decorators must be defined before use."""
+        code = '''
+@my_decorator
+def decorated():
+    pass
+
+
+def my_decorator(func):
+    return func
+'''
+        result = sort_source(code)
+        assert result.index("def my_decorator") < result.index("@my_decorator")
+
+    def test_constant_calling_function(self):
+        """Regression: function called in constant must appear before constant."""
+        code = '''
+TOOL_CALLING_TEMPLATES = {
+    "en": _reformat("hello"),
+}
+
+
+def _reformat(s: str) -> str:
+    return s.replace("{", "{{")
+'''
+        result = sort_source(code)
+        assert result.index("def _reformat") < result.index("TOOL_CALLING_TEMPLATES")
+
+    def test_class_in_type_hint_before_function(self):
+        """Regression: class in type hint must appear before function."""
+        code = '''
+def process_user(user: User) -> str:
+    return user.name
+
+
+class User:
+    name: str
+
+    def __init__(self, name: str):
+        self.name = name
+'''
+        result = sort_source(code)
+        assert result.index("class User:") < result.index("def process_user")
+
+    def test_class_instantiation_in_body(self):
+        """Regression: class instantiated in class body must appear first."""
+        code = '''
+class DummyBenchmarkConfig:
+    device = DummyDevice()
+
+
+class DummyDevice:
+    type = "cpu"
+'''
+        result = sort_source(code)
+        assert result.index("class DummyDevice:") < result.index(
+            "class DummyBenchmarkConfig:"
+        )
+
+    def test_class_type_hint_in_class_body(self):
+        """Regression: class referenced in type hint must appear first."""
+        code = '''
+class Container:
+    item: Item
+
+
+class Item:
+    pass
+'''
+        result = sort_source(code)
+        assert result.index("class Item:") < result.index("class Container:")
+
+    def test_generic_type_hint(self):
+        """Regression: generic types in hints must be handled."""
+        code = '''
+def process_items(items: list[Item]) -> list[Result]:
+    return []
+
+
+class Item:
+    pass
+
+
+class Result:
+    pass
+'''
+        result = sort_source(code)
+        assert result.index("class Item:") < result.index("def process_items")
+        assert result.index("class Result:") < result.index("def process_items")
+
+    def test_class_before_constants_using_it(self):
+        """Regression: class used in constants must appear before constants."""
+        code = '''
+PROVIDERS: list[_Provider] = []
+
+
+class _Provider:
+    name: str
+'''
+        result = sort_source(code)
+        assert result.index("class _Provider:") < result.index("PROVIDERS:")

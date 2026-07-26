@@ -193,33 +193,45 @@ def extract_class_bases(class_node: cst.ClassDef) -> set[str]:
 
 
 def _extract_names_from_assign_value(value: cst.BaseExpression) -> set[str]:
-    """Extract class names referenced in an assignment value.
+    """Extract function/class names referenced in an assignment value.
 
-    Handles Call nodes (e.g., `DummyDevice()`) and other expressions.
+    Walks the entire expression tree to find bare function calls and
+    class references.
 
     Args:
         value: The assignment value expression.
 
     Returns:
-        Set of class/type names referenced.
+        Set of function/class names referenced.
     """
     refs: set[str] = set()
 
-    # Handle function/method calls like `DummyDevice()`
-    if m.matches(value, m.Call()):
-        assert isinstance(value, cst.Call)
-        func = value.func
-        # Extract bare function name
-        if m.matches(func, m.Name()):
-            assert isinstance(func, cst.Name)
-            refs.add(func.value)
-        # Extract method calls like `self.method()` - just the method name
-        elif m.matches(func, m.Attribute()):
-            assert isinstance(func, cst.Attribute)
-            if isinstance(func.attr, cst.Name):
-                refs.add(func.attr.value)
+    class _CallVisitor(cst.CSTVisitor):
+        def __init__(self) -> None:
+            self.names: set[str] = set()
 
-    return refs
+        def on_visit(self, node: cst.CSTNode) -> bool:
+            if m.matches(node, m.Call()):
+                assert isinstance(node, cst.Call)
+                func = node.func
+                # Extract bare function calls
+                if m.matches(func, m.Name()):
+                    assert isinstance(func, cst.Name)
+                    self.names.add(func.value)
+                # Extract method calls like self.method()
+                elif m.matches(func, m.Attribute()):
+                    assert isinstance(func, cst.Attribute)
+                    if isinstance(func.attr, cst.Name):
+                        self.names.add(func.attr.value)
+            elif m.matches(node, m.Name()):
+                # Also extract bare names (e.g., type hints like list[_Provider])
+                assert isinstance(node, cst.Name)
+                self.names.add(node.value)
+            return True
+
+    visitor = _CallVisitor()
+    value.visit(visitor)
+    return visitor.names
 
 
 def extract_class_body_type_refs(class_node: cst.ClassDef) -> set[str]:
