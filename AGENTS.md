@@ -86,12 +86,14 @@ No tests (explicit requirement #5).
 
 ### Function ordering
 
-- Module order: docstring → imports → constants → functions/classes → `__main__` blocks
-- Constants always appear before functions (after imports)
-- `main` functions and `__init__` methods first within their scope (entry points)
-- Classes and functions sorted by dependencies: callees before callers (definitions before usages)
-- Class references in type annotations: class before function using it
-- Decorator definitions before their usages
+- Module order: docstring → imports → sorted units → `__main__` blocks
+- Sorted units (functions, classes, constants) ordered by dependencies:
+  - Callees before callers (definitions before usages)
+  - Constants calling functions: function before constant
+  - Class references in type hints: class before dependent
+  - Class instantiations in body: class before dependent
+  - Decorator definitions before their usages
+- Entry points (`main`, `__init__`) moved to front of their category
 - Ties broken alphabetically
 
 ### Commit messages

@@ -9,28 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Comprehensive test suite (`tests/test_sorting.py`) covering module-level functions,
-  class methods, decorators, cycles, and edge cases
+- Comprehensive test suite (`tests/test_sorting.py`) with 44 tests covering:
+  - Module-level functions and call hierarchy
+  - Class methods and `__init__` ordering
+  - Decorator definitions before usage
+  - Cycles and edge cases
+  - Regression tests for all reported bugs
 - Support for detecting method calls (`self.method()`) within classes
-- Support for class references in type annotations (classes now sorted before
-  functions using them)
+- Support for class references in type annotations
 - Support for generic type annotations (`list[T]`, `dict[K, V]`, etc.)
-- Support for type hints in class bodies (class attributes with type annotations)
-- Support for class instantiations in class body assignments (e.g. `device = DummyDevice()`)
+- Support for type hints in class bodies
+- Support for class instantiations in class body assignments
+- Constants as sortable units with dependency tracking
 
 ### Changed
 
 - Function ordering now puts definitions before usages (callees before callers)
-- Module rewrite order: docstring → imports → constants → functions/classes → `__main__` blocks
-- Classes are now sorted along with functions based on type hint dependencies
-- Constants now always appear before functions (after imports)
+- Module rewrite order: docstring → imports → sorted units → `__main__` blocks
+- Constants, functions and classes now sorted together by dependencies:
+  - Constants calling functions come after those functions
+  - Classes referenced in type hints come before dependents
+  - Decorator definitions come before decorated functions
+- Entry points (`main`, `__init__`) moved to front of their category
 
 ### Fixed
 
 - Call graph extraction now properly traverses function bodies (was blocking on first
   `FunctionDef`)
 - Decorator dependencies now correctly ordered (decorator definitions before usages)
-- Constants that call functions now correctly placed after their dependencies
+- Constant dependencies on functions and classes now detected and sorted correctly
+- Type hints in function signatures handled (class before function using it)
+- Type hints in class body attributes handled
+- Class instantiations in class body (`device = DummyDevice()`) detected
+- Generic type annotations (`list[Item]`) correctly unwrapped
 - Cycle handling in topological sort (mutual recursion)
 - Import and docstring detection in module rewriting
 
