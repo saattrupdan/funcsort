@@ -45,19 +45,19 @@ def rewrite_module(
         else:
             other_fixed.append(node)
 
-    # Order: docstring, imports, functions/classes, constants/other, __main__ blocks
-    # Functions must come before constants that might call them
+    # Order: docstring, imports, constants, functions/classes, __main__ blocks
+    # Constants must come before functions/classes that use them in type hints
     new_body.extend(docstring)
     new_body.extend(imports)
 
-    # Add sorted functions and classes
+    # Constants first (may be referenced in type hints)
+    new_body.extend(other_fixed)
+
+    # Then sorted functions and classes
     for name in ordered_names:
         unit = unit_map[name]
         if m.matches(unit.node, m.FunctionDef()) or m.matches(unit.node, m.ClassDef()):
             new_body.append(unit.node)
-
-    # Then constants, etc. (may depend on functions/classes)
-    new_body.extend(other_fixed)
 
     # Finally __main__ blocks
     new_body.extend(main_blocks)

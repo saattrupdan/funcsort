@@ -377,8 +377,8 @@ def helper():
 class TestConstantsAndImports:
     """Tests for handling constants that depend on functions."""
 
-    def test_function_before_constant_using_it(self):
-        """Functions should come before constants that call them."""
+    def test_constants_before_functions(self):
+        """Constants should always appear before functions (after imports)."""
         code = '''"""Module docstring."""
 
 import typing as t
@@ -395,11 +395,12 @@ TOOL_CALLING_TEMPLATES = {
 }
 '''
         result = sort_source(code)
-        # _reformat should come before TOOL_CALLING_TEMPLATES
-        assert result.index("def _reformat") < result.index("TOOL_CALLING_TEMPLATES =")
-        # Docstring and imports should come before functions
-        assert result.index('"""Module docstring."""') < result.index("def _reformat")
-        assert result.index("import typing") < result.index("def _reformat")
+        # Constants should come before functions
+        assert result.index("TOOL_CALLING_TEMPLATE =") < result.index("def _reformat")
+        assert result.index("TOOL_CALLING_TEMPLATES =") < result.index("def _reformat")
+        # Docstring and imports should come before constants
+        assert result.index('"""Module docstring."""') < result.index("TOOL_CALLING_TEMPLATE")
+        assert result.index("import typing") < result.index("TOOL_CALLING_TEMPLATE")
 
     def test_imports_before_functions(self):
         """Imports should always come before functions."""
@@ -473,3 +474,56 @@ class Record:
 '''
         result = sort_source(code)
         assert result.index("class Record:") < result.index("def get_data")
+
+
+class TestConstantsOrdering:
+    """Tests for constant ordering."""
+
+    def test_constants_before_functions(self):
+        """Constants should appear before functions."""
+        code = '''"""Module with constants."""
+
+def use_data(data: DATA) -> str:
+    """Use data."""
+    return str(data)
+
+
+DATA = dict[str, str]
+'''
+        result = sort_source(code)
+        # DATA constant should come before use_data function
+        assert result.index("DATA =") < result.index("def use_data")
+
+    def test_constants_after_imports(self):
+        """Constants should appear after imports."""
+        code = '''"""Module."""
+
+import typing as t
+
+CONST: str = "test"
+
+
+def func() -> None:
+    """Function."""
+    pass
+'''
+        result = sort_source(code)
+        # Import should come before constant
+        assert result.index("import typing") < result.index("CONST:")
+        # Constant should come before function
+        assert result.index("CONST:") < result.index("def func")
+
+    def test_class_before_function_using_it(self):
+        """Classes used in type hints should come before functions."""
+        code = '''
+def process(obj: Item) -> str:
+    """Process item."""
+    return str(obj)
+
+
+class Item:
+    """An item."""
+    pass
+'''
+        result = sort_source(code)
+        assert result.index("class Item:") < result.index("def process")
