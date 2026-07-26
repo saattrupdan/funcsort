@@ -21,7 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Function ordering now puts definitions before usages (callees before callers)
 - Module rewrite order: docstring → imports → functions → constants → `__main__` blocks
 - Classes are now sorted along with functions based on type hint dependencies
-- Updated AGENTS.md with correct function ordering conventions
 
 ### Fixed
 
