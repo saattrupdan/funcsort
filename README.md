@@ -6,7 +6,7 @@ Automatically sort Python functions and methods by call hierarchy.
 
 [![License](https://img.shields.io/github/license/saattrupdan/funcsort)](https://github.com/saattrupdan/funcsort/blob/main/LICENSE)
 [![LastCommit](https://img.shields.io/github/last-commit/saattrupdan/funcsort)](https://github.com/saattrupdan/funcsort/commits/main)
-[![Code Coverage](https://img.shields.io/badge/Coverage-77%25-yellowgreen.svg)](https://github.com/saattrupdan/funcsort/tree/main/tests)
+[![Code Coverage](https://img.shields.io/badge/Coverage-79%25-yellowgreen.svg)](https://github.com/saattrupdan/funcsort/tree/main/tests)
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)](https://github.com/saattrupdan/funcsort/blob/main/CODE_OF_CONDUCT.md)
 
 ## Installation
