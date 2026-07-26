@@ -952,3 +952,59 @@ def helper():
         helper_idx = result.index("def helper():")
         assert const_idx < main_idx, "Constant should be before main"
         assert main_idx < helper_idx, "Main should be before helper"
+
+    def test_entry_point_first_even_with_dependencies(self):
+        """Entry point (main) comes first among functions, even when it calls other functions."""
+        code = '''
+def main():
+    return helper()
+
+
+def helper():
+    return 42
+'''
+        result = sort_source(code)
+        # main comes first as entry point, even though it depends on helper
+        assert result.index("def main():") < result.index("def helper():")
+
+    def test_constants_before_entry_point(self):
+        """Constants come before entry point, even when entry uses them."""
+        code = '''
+CONSTANT = "hello"
+
+
+def main():
+    print(CONSTANT)
+'''
+        result = sort_source(code)
+        const_idx = result.index("CONSTANT =")
+        main_idx = result.index("def main():")
+        assert const_idx < main_idx, "Constant should be before main"
+
+    def test_asserts_after_constants_they_reference(self):
+        """Assert statements appear after the constants they reference."""
+        code = '''
+assert TRAIN_SIZE % 2 == 0
+
+TRAIN_SIZE = 1024
+'''
+        result = sort_source(code)
+        assert result.index("TRAIN_SIZE =") < result.index("assert")
+
+    def test_spacing_between_functions(self):
+        """Functions separated by exactly two blank lines."""
+        code = '''
+def foo():
+    pass
+
+
+def bar():
+    pass
+'''
+        result = sort_source(code)
+        lines = result.split('\n')
+        for i, line in enumerate(lines):
+            if line.strip().startswith('def bar'):
+                assert lines[i - 1] == '', "Expected blank line before bar"
+                assert lines[i - 2] == '', "Expected two blank lines before bar"
+                break
