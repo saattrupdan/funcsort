@@ -86,11 +86,13 @@ No tests (explicit requirement #5).
 
 ### Function ordering
 
-- `main` functions first (entry point always at top)
-- Callees before callers (definitions before usages)
+- Module order: docstring → imports → constants → functions/classes → `__main__` blocks
+- Constants always appear before functions (after imports)
+- `main` functions and `__init__` methods first within their scope (entry points)
+- Classes and functions sorted by dependencies: callees before callers (definitions before usages)
+- Class references in type annotations: class before function using it
 - Decorator definitions before their usages
 - Ties broken alphabetically
-- For classes: `__init__` first, then same call hierarchy rules
 
 ### Commit messages
 
