@@ -22,8 +22,13 @@ class _ClassTransformer(cst.CSTTransformer):
             return updated_node
 
         edges = build_call_graph(units)
+        # Only prioritise __init__ among methods (not attributes)
+        method_names = {u.name for u in units if "FunctionDef" in type(u.node).__name__}
         ordered = order_by_call_hierarchy(
-            unit_names=[unit.name for unit in units], edges=edges, entry_name="__init__"
+            unit_names=[unit.name for unit in units],
+            edges=edges,
+            entry_name="__init__",
+            function_names=method_names,
         )
         new_body = rewrite_class_body(units, fixed_nodes, ordered)
         return updated_node.with_changes(body=cst.IndentedBlock(body=new_body))
@@ -98,8 +103,13 @@ def sort_source(source: str) -> str:
         result = new_module.code
     else:
         edges = build_call_graph(units)
+        # Only prioritise main among functions (not constants)
+        function_names = {u.name for u in units if "FunctionDef" in type(u.node).__name__}
         ordered = order_by_call_hierarchy(
-            unit_names=[unit.name for unit in units], edges=edges, entry_name="main"
+            unit_names=[unit.name for unit in units],
+            edges=edges,
+            entry_name="main",
+            function_names=function_names,
         )
         result = rewrite_module(units, fixed_nodes, ordered, header)
 

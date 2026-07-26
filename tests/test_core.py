@@ -846,3 +846,109 @@ ORIGINAL_REPO_ID = "x"
         # Should be alphabetically sorted (no dependencies)
         assert result.index("ORIGINAL_REPO_ID") < result.index("RANDOM_STATE")
         assert result.index("RANDOM_STATE") < result.index("TRAIN_SIZE")
+
+    def test_assert_after_constant(self):
+        """Regression: assert statements should appear after the constants they reference."""
+        code = '''
+assert TRAIN_SIZE % 2 == 0, "must be even"
+
+TRAIN_SIZE = 1024
+'''
+        result = sort_source(code)
+        # TRAIN_SIZE should come before the assert
+        assert result.index("TRAIN_SIZE =") < result.index("assert TRAIN_SIZE")
+
+    def test_assert_after_multiple_constants(self):
+        """Multiple asserts should appear after all constants they reference."""
+        code = '''
+assert TRAIN_SIZE % 2 == 0
+assert VAL_SIZE % 2 == 0
+
+TRAIN_SIZE = 1024
+VAL_SIZE = 256
+'''
+        result = sort_source(code)
+        # Constants should come before asserts
+        assert result.index("TRAIN_SIZE =") < result.index("assert")
+        assert result.index("VAL_SIZE =") < result.index("assert")
+
+    def test_function_spacing_two_blank_lines(self):
+        """Functions should be separated by exactly two blank lines."""
+        code = '''
+def foo():
+    pass
+
+
+def bar():
+    pass
+'''
+        result = sort_source(code)
+        # Check that functions are separated by two blank lines
+        lines = result.split('\n')
+        # Find the line with "def bar" - should have two blank lines before it
+        for i, line in enumerate(lines):
+            if line.strip().startswith('def bar'):
+                # Previous two lines should be blank
+                assert lines[i - 1] == '', f"Expected blank line before bar, got: {repr(lines[i - 1])}"
+                assert lines[i - 2] == '', f"Expected two blank lines before bar, got: {repr(lines[i - 2])}"
+                # The line before the blanks should have content (foo's body)
+                assert lines[i - 3].strip(), f"Expected content before blanks, got: {repr(lines[i - 3])}"
+                break
+
+    def test_constant_function_spacing(self):
+        """Constants and functions should have proper spacing (1 before constant, 2 before function)."""
+        code = '''
+CONSTANT = 1
+
+
+def main():
+    pass
+'''
+        result = sort_source(code)
+        lines = result.split('\n')
+        # Find CONSTANT line
+        const_idx = None
+        for i, line in enumerate(lines):
+            if line.strip().startswith('CONSTANT ='):
+                const_idx = i
+                break
+        assert const_idx is not None
+        # After constant: 2 blank lines before function
+        assert lines[const_idx + 1] == '', "Expected blank line after constant"
+        assert lines[const_idx + 2] == '', "Expected second blank line after constant"
+        assert lines[const_idx + 3].strip().startswith('def '), "Expected function after blanks"
+
+    def test_main_first_among_functions(self):
+        """Entry point (main) should come first among functions when it has no function dependencies."""
+        code = '''
+def helper():
+    return 42
+
+
+def main():
+    return 42
+'''
+        result = sort_source(code)
+        # main should come before helper (both have no deps, main is entry point)
+        assert result.index("def main():") < result.index("def helper():")
+
+    def test_main_after_constants(self):
+        """Entry point should come after constants (even when it has no function deps)."""
+        code = '''
+CONSTANT = "hello"
+
+
+def main():
+    print(CONSTANT)
+
+
+def helper():
+    pass
+'''
+        result = sort_source(code)
+        # CONSTANT first, then main, then helper
+        const_idx = result.index("CONSTANT =")
+        main_idx = result.index("def main():")
+        helper_idx = result.index("def helper():")
+        assert const_idx < main_idx, "Constant should be before main"
+        assert main_idx < helper_idx, "Main should be before helper"

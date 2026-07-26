@@ -89,6 +89,11 @@ def build_call_graph(units: list[SortableUnit]) -> dict[str, set[str]]:
             elif isinstance(inner, cst.Assign):
                 value_refs = _extract_names_from_assign_value(inner.value)
                 deps = value_refs
+            elif isinstance(inner, cst.Assert):
+                # Assert depends on names it references in the test
+                assert isinstance(inner, cst.Assert)
+                value_refs = _extract_names_from_assign_value(inner.test)
+                deps = value_refs
         # Filter to only sibling units (exclude self-references)
         graph[unit.name] = (deps & unit_names) - {unit.name}
 

@@ -51,22 +51,38 @@ def rewrite_module(
     new_body.extend(other_fixed)  # Preserves standalone comments
 
     # Add sorted units in dependency order, with proper spacing
-    # Constants get 1 blank line before, functions get 2 blank lines before (but only if preceded by constant)
-    prev_was_constant = False
+    # PEP 8: 2 blank lines between top-level functions/classes, constants grouped together
+    # Asserts (names starting with _assert) don't get blank lines before them (like inline statements)
     started = False
-    for name in ordered_names:
+    prev_is_constant = False
+    for i, name in enumerate(ordered_names):
         unit = unit_map[name]
         is_constant = isinstance(unit.node, cst.SimpleStatementLine)
+        is_assert = name.startswith('_assert')
 
         # Determine spacing before this unit
         if not started:
             # First unit: 1 blank line after imports
             new_body.append(cst.EmptyLine())
             started = True
-        elif prev_was_constant != is_constant:
-            # Transition between constants and functions: 2 blank lines
+            prev_is_constant = is_constant
+            # No continue - we still need to add the unit
+        elif is_assert:
+            # Asserts don't get blank lines - they stick to previous item
+            pass
+        elif not prev_is_constant:
+            # Function after function: 2 blank lines
             new_body.append(cst.EmptyLine())
             new_body.append(cst.EmptyLine())
+        elif is_constant and prev_is_constant:
+            # Constant after constant: no blank line (keep together)
+            pass
+        else:
+            # Transition from constant to function: 2 blank lines
+            new_body.append(cst.EmptyLine())
+            new_body.append(cst.EmptyLine())
+        
+        prev_is_constant = is_constant
 
         # Add the unit
         if is_constant:
@@ -85,8 +101,6 @@ def rewrite_module(
             assert isinstance(unit.node, cst.ClassDef)
             cls = unit.node.with_changes(leading_lines=())
             new_body.append(cls)
-
-        prev_was_constant = is_constant
 
     # Finally __main__ blocks
     new_body.extend(main_blocks)

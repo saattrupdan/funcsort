@@ -40,7 +40,7 @@ def parse_module(source: str) -> tuple[list[SortableUnit], list[_Statement]]:
             )
         elif m.matches(statement, m.SimpleStatementLine()):
             assert isinstance(statement, cst.SimpleStatementLine)
-            # Check for annotated assignments and regular assignments
+            # Check for annotated assignments, regular assignments, and asserts
             for inner_stmt in statement.body:
                 if m.matches(inner_stmt, m.AnnAssign()):
                     assert isinstance(inner_stmt, cst.AnnAssign)
@@ -85,8 +85,20 @@ def parse_module(source: str) -> tuple[list[SortableUnit], list[_Statement]]:
                                 )
                             )
                             break
+                elif m.matches(inner_stmt, m.Assert()):
+                    # Assert statements: treat as sortable unit that depends on referenced names
+                    # Will be sorted to appear after dependencies
+                    assert isinstance(inner_stmt, cst.Assert)
+                    units.append(
+                        SortableUnit(
+                            name=f"_assert_{len(units)}",
+                            node=statement,
+                            is_entry=False,
+                        )
+                    )
+                    break
             else:
-                # No assignment found in this statement, treat as fixed
+                # No assignment or assert found in this statement, treat as fixed
                 fixed_nodes.append(statement)
         else:
             fixed_nodes.append(statement)
