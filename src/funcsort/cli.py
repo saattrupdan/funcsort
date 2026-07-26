@@ -32,13 +32,13 @@ def main(path: Path = Path("."), fix: bool = False, verbose: bool = False) -> No
     if verbose:
         logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     else:
-        logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
+        logging.basicConfig(level=logging.WARNING, format="%(message)s")
 
     _, changed = process_path(path, fix)
 
     if changed:
         if fix:
-            logger.info("Fixed %d file(s)", len(changed))
+            print(f"Fixed {len(changed)} file(s)")
         else:
             for file_path in changed:
                 logger.warning("Would reorder: %s", file_path)
@@ -47,4 +47,4 @@ def main(path: Path = Path("."), fix: bool = False, verbose: bool = False) -> No
             )
             raise SystemExit(1)
     else:
-        logger.info("All files are properly sorted")
+        print("All files sorted")
