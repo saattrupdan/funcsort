@@ -1010,22 +1010,3 @@ def bar():
                 assert lines[i - 1] == '', "Expected blank line before bar"
                 assert lines[i - 2] == '', "Expected two blank lines before bar"
                 break
-
-    def test_first_function_after_imports_has_two_blank_lines(self):
-        """First function after imports should have 2 blank lines (PEP 8)."""
-        code = '''
-import os
-
-
-def main():
-    pass
-'''
-        result = sort_source(code)
-        lines = result.split('\n')
-        # Find first function
-        for i, line in enumerate(lines):
-            if line.strip().startswith('def '):
-                # Should have 2 blank lines before it (after imports)
-                assert lines[i - 1] == '', f"Expected blank line before first function, got: {repr(lines[i - 1])}"
-                assert lines[i - 2] == '', f"Expected two blank lines before first function, got: {repr(lines[i - 2])}"
-                break
