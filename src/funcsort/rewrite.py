@@ -28,18 +28,27 @@ def rewrite_module(
     unit_map = {unit.name: unit for unit in units}
     new_body: list[_Statement] = []
 
-    # Separate __name__ == "__main__" blocks from other fixed nodes
-    main_blocks: list[_Statement] = []
+    # Separate imports, docstring, and other fixed nodes
+    docstring: list[_Statement] = []
+    imports: list[_Statement] = []
     other_fixed: list[_Statement] = []
+    main_blocks: list[_Statement] = []
 
-    for node in fixed_nodes:
+    for i, node in enumerate(fixed_nodes):
         if _is_main_block(node):
             main_blocks.append(node)
+        elif _is_import(node):
+            imports.append(node)
+        elif i == 0 and _is_docstring(node):
+            # First statement is module docstring
+            docstring.append(node)
         else:
             other_fixed.append(node)
 
-    # Add non-main fixed nodes first (imports, constants, classes, etc.)
-    new_body.extend(other_fixed)
+    # Order: docstring, imports, functions, constants/other, __main__ blocks
+    # Functions must come before constants that might call them
+    new_body.extend(docstring)
+    new_body.extend(imports)
 
     # Add sorted functions
     for name in ordered_names:
@@ -47,7 +56,10 @@ def rewrite_module(
         if m.matches(unit.node, m.FunctionDef()):
             new_body.append(unit.node)
 
-    # Add __name__ == "__main__" blocks at the end
+    # Then constants, classes, etc. (may depend on functions)
+    new_body.extend(other_fixed)
+
+    # Finally __main__ blocks
     new_body.extend(main_blocks)
 
     module = cst.Module(body=new_body)
@@ -109,3 +121,34 @@ def _is_main_block(node: cst.CSTNode) -> bool:
         comp.comparator, m.SimpleString(value="'__main__'")
     ) or m.matches(comp.comparator, m.SimpleString(value='"__main__"'))
     return is_main
+
+
+def _is_import(node: cst.CSTNode) -> bool:
+    """Check if a node is an import statement.
+
+    Returns:
+        True if the node is an import (Import or ImportFrom).
+    """
+    # Imports are wrapped in SimpleStatementLine
+    if not m.matches(node, m.SimpleStatementLine()):
+        return False
+    assert isinstance(node, cst.SimpleStatementLine)
+    if len(node.body) != 1:
+        return False
+    stmt = node.body[0]
+    return m.matches(stmt, m.Import()) or m.matches(stmt, m.ImportFrom())
+
+
+def _is_docstring(node: cst.CSTNode) -> bool:
+    """Check if a node is a module docstring (expression statement with just a string).
+
+    Returns:
+        True if the node is a simple string expression (docstring).
+    """
+    if not m.matches(node, m.SimpleStatementLine()):
+        return False
+    assert isinstance(node, cst.SimpleStatementLine)
+    if len(node.body) != 1:
+        return False
+    expr = node.body[0]
+    return m.matches(expr, m.Expr()) and isinstance(expr, cst.Expr) and m.matches(expr.value, m.SimpleString())
