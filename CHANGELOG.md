@@ -30,7 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Constants calling functions come after those functions
   - Classes referenced in type hints come before dependents
   - Decorator definitions come before decorated functions
-- Entry points (`main`, `__init__`) moved to front of their category
+- Entry points (`main`, `__init__`) only come first when they have no dependencies
+
+### Fixed
 
 - Call graph extraction now properly traverses function bodies (was blocking on first
   `FunctionDef`)
@@ -40,9 +42,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Type hints in class body attributes handled
 - Class instantiations in class body (`device = DummyDevice()`) detected
 - Generic type annotations (`list[Item]`) correctly unwrapped
-- Union type annotations (`Input \| Config`) parsed correctly
+- Union type annotations (`Input | Config`) parsed correctly
 - Default argument values scanned for dependencies
 - Lambda expressions in constants scanned for dependencies
+- Bare name references in function bodies detected (e.g., `print(CONSTANT)`)
+- Entry points (`main`, `__init__`) only come first when they have no dependencies
 - Cycle handling in topological sort (mutual recursion)
 - Import and docstring detection in module rewriting
 
