@@ -37,21 +37,23 @@ class _CallCollector(cst.CSTVisitor):
 def build_call_graph(units: list[SortableUnit]) -> dict[str, set[str]]:
     """Build a call graph for a list of sortable units.
 
-    Creates edges from caller to callee for same-scope function calls.
+    Creates edges from caller to callee for same-scope function calls and
+    decorator usages.
 
     Args:
         units: List of sortable units in scope.
 
     Returns:
-        Dict mapping function name to set of functions it calls.
+        Dict mapping function name to set of functions it depends on.
     """
     unit_names = {unit.name for unit in units}
     graph: dict[str, set[str]] = {}
 
     for unit in units:
         calls = extract_calls(unit.node)
+        decorators = extract_decorators(unit.node)
         # Filter to only sibling functions
-        graph[unit.name] = calls & unit_names
+        graph[unit.name] = (calls | decorators) & unit_names
 
     return graph
 
@@ -68,3 +70,24 @@ def extract_calls(func_node: cst.FunctionDef) -> set[str]:
     collector = _CallCollector()
     func_node.visit(collector)
     return collector.calls
+
+
+def extract_decorators(func_node: cst.FunctionDef) -> set[str]:
+    """Extract all decorator names from a function definition.
+
+    Only extracts bare Name decorators (e.g. @my_decorator), not
+    complex expressions (e.g. @decorator_factory()).
+
+    Args:
+        func_node: The function definition node.
+
+    Returns:
+        Set of decorator names.
+    """
+    decorators: set[str] = set()
+    for decorator in func_node.decorators:
+        if m.matches(decorator.decorator, m.Name()):
+            name = decorator.decorator
+            assert isinstance(name, cst.Name)
+            decorators.add(name.value)
+    return decorators
