@@ -50,8 +50,9 @@ def rewrite_module(
     new_body.extend(imports)
     new_body.extend(other_fixed)  # Preserves standalone comments
 
-    # Add blank line after imports/comments before sorted units
+    # Add TWO blank lines after imports/comments before sorted units (PEP 8)
     if ordered_names:
+        new_body.append(cst.EmptyLine())
         new_body.append(cst.EmptyLine())
 
     # Add all sorted units in dependency order, with spacing
@@ -61,9 +62,10 @@ def rewrite_module(
         unit = unit_map[name]
         is_constant = isinstance(unit.node, (cst.Assign, cst.AnnAssign))
 
-        # Add blank line between constants and functions
+        # Add TWO blank lines between constants and functions (PEP 8)
         if i > 0 and prev_was_constant != is_constant:
             if is_constant or i > 0:  # Always add between different types
+                new_body.append(cst.EmptyLine())
                 new_body.append(cst.EmptyLine())
 
         if is_constant:
