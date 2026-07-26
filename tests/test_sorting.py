@@ -817,3 +817,16 @@ def main():
         result = sort_source(code)
         # main has no dependencies, should come first as entry point
         assert result.index("def main():") < result.index("def helper():")
+
+    def test_constant_before_main(self):
+        """Constants should come before main when main uses them."""
+        code = '''
+CONSTANT = "hello"
+
+
+def main() -> None:
+    print(CONSTANT)
+'''
+        result = sort_source(code)
+        # CONSTANT should come before main
+        assert result.index("CONSTANT =") < result.index("def main()")
