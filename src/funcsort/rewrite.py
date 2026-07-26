@@ -8,60 +8,6 @@ import libcst.matchers as m
 from .models import SortableUnit, _Statement
 
 
-def _is_main_block(node: cst.CSTNode) -> bool:
-    """Check if a node is an `if __name__ == "__main__":` block.
-
-    Returns:
-        True if the node is a main guard block.
-    """
-    if not m.matches(node, m.If()):
-        return False
-    assert isinstance(node, cst.If)
-    test = node.test
-    if not m.matches(test, m.Comparison()):
-        return False
-    assert isinstance(test, cst.Comparison)
-    if len(test.comparisons) != 1:
-        return False
-    if not m.matches(test.left, m.Name(value="__name__")):
-        return False
-    comp = test.comparisons[0]
-    if not m.matches(comp.operator, m.Equal()):
-        return False
-    is_main = m.matches(
-        comp.comparator, m.SimpleString(value="'__main__'")
-    ) or m.matches(comp.comparator, m.SimpleString(value='"__main__"'))
-    return is_main
-
-
-def rewrite_class_body(
-    units: list[SortableUnit], fixed_nodes: list[t.Any], ordered_names: list[str]
-) -> list[t.Any]:
-    """Rewrite a class body with methods in the specified order.
-
-    Args:
-        units: All sortable methods.
-        fixed_nodes: Non-sortable nodes to keep in place.
-        ordered_names: Method names in desired order.
-
-    Returns:
-        New class body as list of statements.
-    """
-    unit_map = {unit.name: unit for unit in units}
-    new_body: list[t.Any] = []
-
-    # Add fixed nodes first
-    new_body.extend(fixed_nodes)
-
-    # Add sorted methods
-    for name in ordered_names:
-        unit = unit_map[name]
-        if m.matches(unit.node, m.FunctionDef()):
-            new_body.append(unit.node)
-
-    return new_body
-
-
 def rewrite_module(
     units: list[SortableUnit],
     fixed_nodes: list[_Statement],
@@ -109,3 +55,57 @@ def rewrite_module(
     if header:
         code = header + "\n\n" + code
     return code
+
+
+def rewrite_class_body(
+    units: list[SortableUnit], fixed_nodes: list[t.Any], ordered_names: list[str]
+) -> list[t.Any]:
+    """Rewrite a class body with methods in the specified order.
+
+    Args:
+        units: All sortable methods.
+        fixed_nodes: Non-sortable nodes to keep in place.
+        ordered_names: Method names in desired order.
+
+    Returns:
+        New class body as list of statements.
+    """
+    unit_map = {unit.name: unit for unit in units}
+    new_body: list[t.Any] = []
+
+    # Add fixed nodes first
+    new_body.extend(fixed_nodes)
+
+    # Add sorted methods
+    for name in ordered_names:
+        unit = unit_map[name]
+        if m.matches(unit.node, m.FunctionDef()):
+            new_body.append(unit.node)
+
+    return new_body
+
+
+def _is_main_block(node: cst.CSTNode) -> bool:
+    """Check if a node is an `if __name__ == "__main__":` block.
+
+    Returns:
+        True if the node is a main guard block.
+    """
+    if not m.matches(node, m.If()):
+        return False
+    assert isinstance(node, cst.If)
+    test = node.test
+    if not m.matches(test, m.Comparison()):
+        return False
+    assert isinstance(test, cst.Comparison)
+    if len(test.comparisons) != 1:
+        return False
+    if not m.matches(test.left, m.Name(value="__name__")):
+        return False
+    comp = test.comparisons[0]
+    if not m.matches(comp.operator, m.Equal()):
+        return False
+    is_main = m.matches(
+        comp.comparator, m.SimpleString(value="'__main__'")
+    ) or m.matches(comp.comparator, m.SimpleString(value='"__main__"'))
+    return is_main

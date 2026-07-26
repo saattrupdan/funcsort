@@ -29,43 +29,6 @@ class _ClassTransformer(cst.CSTTransformer):
         return updated_node.with_changes(body=cst.IndentedBlock(body=new_body))
 
 
-def _is_ignored(file_path: Path, start_dir: Path) -> bool:
-    """Check if a file is ignored by gitignore patterns in parent directories.
-
-    Walks from the file's directory up to the filesystem root, checking each
-    directory's .gitignore file. Patterns are matched relative to where the
-    .gitignore is located.
-
-    Args:
-        file_path: File to check.
-        start_dir: Directory where search started.
-
-    Returns:
-        True if file is ignored by any .gitignore in parent directories.
-    """
-    # Use absolute paths to ensure proper parent traversal
-    file_path = file_path.resolve()
-    start_dir = start_dir.resolve()
-
-    # Walk from file's directory up to filesystem root
-    current = file_path.parent
-    while current != current.parent:
-        gitignore = current / ".gitignore"
-        if gitignore.exists():
-            patterns = gitignore.read_text(encoding="utf-8").splitlines()
-            spec = pathspec.GitIgnoreSpec.from_lines(patterns)
-            try:
-                rel_path = file_path.relative_to(current).as_posix()
-                if spec.match_file(rel_path):
-                    return True
-            except ValueError:
-                # file_path is not relative to current, skip this .gitignore
-                pass
-        current = current.parent
-
-    return False
-
-
 def process_path(path: Path, fix: bool) -> tuple[bool, list[Path]]:
     """Process a file or directory.
 
@@ -146,3 +109,40 @@ def sort_source(source: str) -> str:
     new_module = module.visit(transformer)
 
     return new_module.code
+
+
+def _is_ignored(file_path: Path, start_dir: Path) -> bool:
+    """Check if a file is ignored by gitignore patterns in parent directories.
+
+    Walks from the file's directory up to the filesystem root, checking each
+    directory's .gitignore file. Patterns are matched relative to where the
+    .gitignore is located.
+
+    Args:
+        file_path: File to check.
+        start_dir: Directory where search started.
+
+    Returns:
+        True if file is ignored by any .gitignore in parent directories.
+    """
+    # Use absolute paths to ensure proper parent traversal
+    file_path = file_path.resolve()
+    start_dir = start_dir.resolve()
+
+    # Walk from file's directory up to filesystem root
+    current = file_path.parent
+    while current != current.parent:
+        gitignore = current / ".gitignore"
+        if gitignore.exists():
+            patterns = gitignore.read_text(encoding="utf-8").splitlines()
+            spec = pathspec.GitIgnoreSpec.from_lines(patterns)
+            try:
+                rel_path = file_path.relative_to(current).as_posix()
+                if spec.match_file(rel_path):
+                    return True
+            except ValueError:
+                # file_path is not relative to current, skip this .gitignore
+                pass
+        current = current.parent
+
+    return False

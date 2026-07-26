@@ -25,33 +25,39 @@ def order_by_call_hierarchy(
     if not names:
         return []
 
-    # Separate entry point if present
+    # Keep entry in the graph but mark it for special handling
     entry: str | None = None
     if entry_name and entry_name in names:
         entry = entry_name
-        names.remove(entry)
 
+    # DFS-based: for each node, visit its DEPENDENCIES first (callees), then add the node
+    # This gives "definitions before usages" order
+    visited: set[str] = set()
+    path: set[str] = set()
     result: list[str] = []
-    remaining = set(names)
 
-    while remaining:
-        # Find functions that don't call any remaining functions
-        # (i.e., their callees are already in result or they have no callees)
-        ready: list[str] = []
-        for name in sorted(remaining):
-            callees = edges.get(name, set())
-            remaining_callees = callees & remaining
-            if not remaining_callees:
-                ready.append(name)
+    def visit(name: str) -> None:
+        if name in visited:
+            return
+        if name in path:
+            # Cycle detected - skip (will be handled by alphabetical tie-breaking elsewhere)
+            return
+        path.add(name)
+        # Visit dependencies first (sorted for determinism)
+        for dep in sorted(edges.get(name, set())):
+            if dep in names:
+                visit(dep)
+        path.remove(name)
+        visited.add(name)
+        result.append(name)
 
-        if not ready:
-            # Cycle detected - take alphabetically first
-            ready = [sorted(remaining)[0]]
+    for name in sorted(names):
+        if name not in visited:
+            visit(name)
 
-        result.extend(ready)
-        remaining -= set(ready)
+    # Move entry point to front if present
+    if entry and entry in result:
+        result.remove(entry)
+        result.insert(0, entry)
 
-    # Prepend entry point
-    if entry:
-        return [entry] + result
     return result

@@ -15,23 +15,29 @@ class _CallCollector(cst.CSTVisitor):
 
     def __init__(self) -> None:
         self.calls: set[str] = set()
-        self._in_nested_func = False
+        self._depth: int = 0
+
+    def on_visit(self, node: cst.CSTNode) -> bool:
+        if m.matches(node, m.FunctionDef()):
+            # Only visit body of top-level function (depth 0)
+            # Nested functions (depth > 0) should be skipped
+            if self._depth > 0:
+                return False
+            self._depth += 1
+        return True
 
     def on_leave(self, original_node: cst.CSTNode) -> None:
         if m.matches(original_node, m.FunctionDef()):
-            self._in_nested_func = False
+            self._depth -= 1
         if m.matches(original_node, m.Call()) and isinstance(original_node, cst.Call):
             func = original_node.func
+            # Handle both bare function calls and method calls (self.foo())
             if m.matches(func, m.Name()) and isinstance(func, cst.Name):
                 self.calls.add(func.value)
-
-    def on_visit(self, node: cst.CSTNode) -> bool:
-        if self._in_nested_func:
-            return False
-        if m.matches(node, m.FunctionDef()):
-            self._in_nested_func = True
-            return False
-        return True
+            elif m.matches(func, m.Attribute()) and isinstance(func, cst.Attribute):
+                # For self.method(), extract just 'method'
+                if isinstance(func.attr, cst.Name):
+                    self.calls.add(func.attr.value)
 
 
 def build_call_graph(units: list[SortableUnit]) -> dict[str, set[str]]:
@@ -58,20 +64,6 @@ def build_call_graph(units: list[SortableUnit]) -> dict[str, set[str]]:
     return graph
 
 
-def extract_calls(func_node: cst.FunctionDef) -> set[str]:
-    """Extract all function calls from a function body.
-
-    Args:
-        func_node: The function definition node.
-
-    Returns:
-        Set of function names called within the function.
-    """
-    collector = _CallCollector()
-    func_node.visit(collector)
-    return collector.calls
-
-
 def extract_decorators(func_node: cst.FunctionDef) -> set[str]:
     """Extract all decorator names from a function definition.
 
@@ -91,3 +83,17 @@ def extract_decorators(func_node: cst.FunctionDef) -> set[str]:
             assert isinstance(name, cst.Name)
             decorators.add(name.value)
     return decorators
+
+
+def extract_calls(func_node: cst.FunctionDef) -> set[str]:
+    """Extract all function calls from a function body.
+
+    Args:
+        func_node: The function definition node.
+
+    Returns:
+        Set of function names called within the function.
+    """
+    collector = _CallCollector()
+    func_node.visit(collector)
+    return collector.calls
