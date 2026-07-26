@@ -151,9 +151,9 @@ def extract_type_annotations(func_node: cst.FunctionDef) -> set[str]:
         if param.default:
             refs.update(_extract_names_from_expression(param.default))
 
-    # Handle *args (star_arg) if present
+    # Handle *args (star_arg) if present - can be Param or ParamStar
     if func_node.params.star_arg and not isinstance(
-        func_node.params.star_arg, cst.MaybeSentinel
+        func_node.params.star_arg, (cst.MaybeSentinel, cst.ParamStar)
     ):
         if func_node.params.star_arg.annotation:
             refs.update(
