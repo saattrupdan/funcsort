@@ -9,12 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Comprehensive test suite (`tests/test_sorting.py`) with 44 tests covering:
+- Comprehensive test suite (`tests/test_sorting.py`) with 47 tests covering:
   - Module-level functions and call hierarchy
   - Class methods and `__init__` ordering
   - Decorator definitions before usage
   - Cycles and edge cases
-  - Regression tests for all reported bugs
+  - Regression tests for all reported bugs (default args, unions, lambdas, etc.)
 - Support for detecting method calls (`self.method()`) within classes
 - Support for class references in type annotations
 - Support for generic type annotations (`list[T]`, `dict[K, V]`, etc.)
@@ -32,8 +32,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Decorator definitions come before decorated functions
 - Entry points (`main`, `__init__`) moved to front of their category
 
-### Fixed
-
 - Call graph extraction now properly traverses function bodies (was blocking on first
   `FunctionDef`)
 - Decorator dependencies now correctly ordered (decorator definitions before usages)
@@ -42,6 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Type hints in class body attributes handled
 - Class instantiations in class body (`device = DummyDevice()`) detected
 - Generic type annotations (`list[Item]`) correctly unwrapped
+- Union type annotations (`Input \| Config`) parsed correctly
+- Default argument values scanned for dependencies
+- Lambda expressions in constants scanned for dependencies
 - Cycle handling in topological sort (mutual recursion)
 - Import and docstring detection in module rewriting
 
