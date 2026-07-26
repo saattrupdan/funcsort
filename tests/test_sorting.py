@@ -527,3 +527,50 @@ class Item:
 '''
         result = sort_source(code)
         assert result.index("class Item:") < result.index("def process")
+
+
+class TestClassBodyTypeHints:
+    """Tests for type hints in class bodies."""
+
+    def test_class_type_hint_in_body(self):
+        """Classes referenced in class body annotations should come first."""
+        code = '''
+class Container:
+    """Container with typed field."""
+    item: Item
+
+
+class Item:
+    """An item."""
+    pass
+'''
+        result = sort_source(code)
+        assert result.index("class Item:") < result.index("class Container:")
+
+    def test_class_inheritance(self):
+        """Base classes should come before child classes."""
+        code = '''
+class Child(Parent):
+    """Child class."""
+    pass
+
+
+class Parent:
+    """Parent class."""
+    pass
+'''
+        result = sort_source(code)
+        assert result.index("class Parent:") < result.index("class Child(")
+
+    def test_generic_type_in_class_body(self):
+        """Generic types in class body should be handled."""
+        code = '''
+class Container:
+    items: list[Item]
+
+
+class Item:
+    pass
+'''
+        result = sort_source(code)
+        assert result.index("class Item:") < result.index("class Container:")

@@ -63,9 +63,10 @@ def build_call_graph(units: list[SortableUnit]) -> dict[str, set[str]]:
             type_refs = extract_type_annotations(unit.node)
             deps = calls | decorators | type_refs
         elif isinstance(unit.node, cst.ClassDef):
-            # Classes can depend on base classes via type annotations
-            type_refs = extract_class_bases(unit.node)
-            deps = type_refs
+            # Classes can depend on base classes and type hints in class body
+            base_refs = extract_class_bases(unit.node)
+            body_refs = extract_class_body_type_refs(unit.node)
+            deps = base_refs | body_refs
         # Filter to only sibling units
         graph[unit.name] = deps & unit_names
 
@@ -149,10 +150,15 @@ def _extract_names_from_annotation(annotation: cst.BaseExpression) -> set[str]:
             assert isinstance(annotation.value, cst.Name)
             refs.add(annotation.value.value)
         for item in annotation.slice:
-            if isinstance(item.slice, cst.Name):
-                refs.add(item.slice.value)
-            elif m.matches(item.slice, m.Subscript()):
-                refs.update(_extract_names_from_annotation(item.slice))
+            # Unwrap Index if present (libcst wraps subscript elements in Index)
+            slice_node = item.slice
+            if isinstance(slice_node, cst.Index):
+                slice_node = slice_node.value
+            if isinstance(slice_node, cst.Name):
+                refs.add(slice_node.value)
+            elif m.matches(slice_node, m.Subscript()):
+                assert isinstance(slice_node, cst.Subscript)
+                refs.update(_extract_names_from_annotation(slice_node))
 
     return refs
 
@@ -171,4 +177,32 @@ def extract_class_bases(class_node: cst.ClassDef) -> set[str]:
         if m.matches(base.value, m.Name()):
             assert isinstance(base.value, cst.Name)
             refs.add(base.value.value)
+    return refs
+
+
+def extract_class_body_type_refs(class_node: cst.ClassDef) -> set[str]:
+    """Extract type references from class body annotations.
+
+    Extracts bare Name nodes from annotated assignments in the class body
+    (e.g., `item: Item` or `data: list[Record]`).
+
+    Args:
+        class_node: The class definition node.
+
+    Returns:
+        Set of type/class names referenced in class body annotations.
+    """
+    refs: set[str] = set()
+
+    for stmt in class_node.body.body:
+        # Annotated assignments are wrapped in SimpleStatementLine
+        if m.matches(stmt, m.SimpleStatementLine()):
+            assert isinstance(stmt, cst.SimpleStatementLine)
+            for inner_stmt in stmt.body:
+                if m.matches(inner_stmt, m.AnnAssign()):
+                    assert isinstance(inner_stmt, cst.AnnAssign)
+                    annotation = inner_stmt.annotation
+                    if annotation:
+                        refs.update(_extract_names_from_annotation(annotation.annotation))
+
     return refs
