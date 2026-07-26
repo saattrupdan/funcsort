@@ -11,15 +11,21 @@ def order_by_call_hierarchy(
 ) -> list[str]:
     """Order function names by call hierarchy.
 
-    Entry points (if provided) come first among functions (but after constants).
-    Remaining units are ordered so dependencies come before dependents.
-    Ties and cycles are broken alphabetically.
+    Ordering semantics:
+    1. Constants that don't depend on functions come first (in dependency order)
+    2. Functions (entry point first, then others in dependency order)
+    3. Constants that depend on functions come after functions (in dependency order)
+
+    Note: Entry point comes BEFORE functions it calls, because Python defines all
+    functions at module load time. However, constants that depend on functions must
+    come after those functions (runtime requirement).
 
     Args:
         unit_names: All unit names to order.
         edges: Dict mapping unit name to set of units it depends on.
         entry_name: Optional entry point name (main or __init__).
-        function_names: Set of function/class names (entry point prioritisation applies only among these).
+        function_names: Set of function/class names (entry point prioritisation applies
+            only among these).
 
     Returns:
         Ordered list of unit names.
@@ -30,50 +36,111 @@ def order_by_call_hierarchy(
     if not names:
         return []
 
-    # Keep entry in the graph but mark it for special handling
-    entry: str | None = None
-    if entry_name and entry_name in names:
-        entry = entry_name
+    # Separate constants and functions
+    constants = [n for n in names if n not in function_names]
+    funcs = [n for n in names if n in function_names]
 
-    # DFS-based: for each node, visit its DEPENDENCIES first (callees), then add the node
-    # This gives "definitions before usages" order
+    # Classify constants: those that depend on functions vs those that don't
+    independent_constants = []
+    dependent_constants = []
+    for c in constants:
+        deps_on_funcs = edges.get(c, set()) & function_names
+        if deps_on_funcs:
+            dependent_constants.append(c)
+        else:
+            independent_constants.append(c)
+
+    # DFS-based topological sort for independent constants
     visited: set[str] = set()
     path: set[str] = set()
-    result: list[str] = []
+    indep_const_result: list[str] = []
 
-    def visit(name: str) -> None:
+    def visit_indep(name: str) -> None:
         if name in visited:
             return
         if name in path:
-            # Cycle detected - skip (will be handled by alphabetical tie-breaking elsewhere)
-            return
+            return  # Cycle
         path.add(name)
-        # Visit dependencies first (sorted for determinism)
-        for dep in sorted(edges.get(name, set())):
-            if dep in names:
-                visit(dep)
+        for dep in sorted(edges.get(name, set()) & set(independent_constants)):
+            visit_indep(dep)
         path.remove(name)
         visited.add(name)
-        result.append(name)
+        indep_const_result.append(name)
 
-    for name in sorted(names):
+    for name in independent_constants:
         if name not in visited:
-            visit(name)
+            visit_indep(name)
 
-    # Move entry point to front among functions only (constants stay at front)
-    # Entry point comes FIRST among functions, even if it has dependencies
-    # (dependencies will still be ordered correctly: callees before callers within the remaining list)
-    if entry and entry in result and function_names:
-        # Find first function position in result
-        first_func_idx = None
-        for i, item in enumerate(result):
-            if item in function_names:
-                first_func_idx = i
-                break
+    # Sort functions: entry point first, then others in dependency order
+    if entry_name and entry_name in funcs:
+        other_funcs = [f for f in funcs if f != entry_name]
         
-        # Move entry to front among functions (if not already there)
-        if first_func_idx is not None and result[first_func_idx] != entry:
-            result.remove(entry)
-            result.insert(first_func_idx, entry)
+        visited_func: set[str] = set()
+        path_func: set[str] = set()
+        func_result: list[str] = []
 
-    return result
+        def visit_func(name: str) -> None:
+            if name in visited_func:
+                return
+            if name in path_func:
+                return  # Cycle
+            path_func.add(name)
+            for dep in sorted(edges.get(name, set()) & function_names):
+                visit_func(dep)
+            path_func.remove(name)
+            visited_func.add(name)
+            func_result.append(name)
+
+        for name in other_funcs:
+            if name not in visited_func:
+                visit_func(name)
+        
+        # Entry first among functions
+        sorted_funcs = [entry_name] + func_result
+    else:
+        # No entry point - sort all functions by dependency
+        visited_func: set[str] = set()
+        path_func: set[str] = set()
+        func_result: list[str] = []
+
+        def visit_func(name: str) -> None:
+            if name in visited_func:
+                return
+            if name in path_func:
+                return  # Cycle
+            path_func.add(name)
+            for dep in sorted(edges.get(name, set()) & function_names):
+                visit_func(dep)
+            path_func.remove(name)
+            visited_func.add(name)
+            func_result.append(name)
+
+        for name in funcs:
+            if name not in visited_func:
+                visit_func(name)
+        
+        sorted_funcs = func_result
+
+    # DFS-based topological sort for dependent constants
+    visited_dep: set[str] = set()
+    path_dep: set[str] = set()
+    dep_const_result: list[str] = []
+
+    def visit_dep(name: str) -> None:
+        if name in visited_dep:
+            return
+        if name in path_dep:
+            return  # Cycle
+        path_dep.add(name)
+        for dep in sorted(edges.get(name, set()) & set(dependent_constants)):
+            visit_dep(dep)
+        path_dep.remove(name)
+        visited_dep.add(name)
+        dep_const_result.append(name)
+
+    for name in dependent_constants:
+        if name not in visited_dep:
+            visit_dep(name)
+
+    # Combine: independent constants, functions, dependent constants
+    return indep_const_result + sorted_funcs + dep_const_result
