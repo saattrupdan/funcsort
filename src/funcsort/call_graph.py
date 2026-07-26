@@ -121,22 +121,45 @@ def extract_calls(func_node: cst.FunctionDef) -> set[str]:
 
 
 def extract_type_annotations(func_node: cst.FunctionDef) -> set[str]:
-    """Extract class/type references from function type annotations.
+    """Extract class/type references from function type annotations and defaults.
 
-    Extracts bare Name nodes from parameter annotations and return type.
+    Extracts bare Name nodes from:
+    - Parameter annotations
+    - Return type annotation
+    - Default values (including lambdas)
 
     Args:
         func_node: The function definition node.
 
     Returns:
-        Set of type/class names referenced in annotations.
+        Set of type/class names referenced in annotations and defaults.
     """
     refs: set[str] = set()
 
-    # Extract from parameters (annotation.annotation is the actual type)
+    # Extract from parameters (annotation and default values)
     for param in func_node.params.params:
         if param.annotation:
             refs.update(_extract_names_from_annotation(param.annotation.annotation))
+        if param.default:
+            refs.update(_extract_names_from_expression(param.default))
+
+    # Handle *args (star_arg) if present
+    if func_node.params.star_arg and not isinstance(
+        func_node.params.star_arg, cst.MaybeSentinel
+    ):
+        if func_node.params.star_arg.annotation:
+            refs.update(
+                _extract_names_from_annotation(func_node.params.star_arg.annotation.annotation)
+            )
+
+    # Handle **kwargs (star_kwarg) if present
+    if func_node.params.star_kwarg and not isinstance(
+        func_node.params.star_kwarg, cst.MaybeSentinel
+    ):
+        if func_node.params.star_kwarg.annotation:
+            refs.update(
+                _extract_names_from_annotation(func_node.params.star_kwarg.annotation.annotation)
+            )
 
     # Extract from return type
     if func_node.returns:
@@ -148,7 +171,17 @@ def extract_type_annotations(func_node: cst.FunctionDef) -> set[str]:
 def _extract_names_from_annotation(annotation: cst.BaseExpression) -> set[str]:
     """Extract bare Name references from a type annotation.
 
-    Handles Name, Subscript (e.g., list[T]), and other common patterns.
+    Handles:
+    - Name (e.g., Item)
+    - Subscript (e.g., list[T], dict[K, V])
+    - BinaryOperation with BitOr (e.g., Input | Config for Union types)
+    - Attribute (e.g., module.Class)
+
+    Args:
+        annotation: The annotation expression.
+
+    Returns:
+        Set of type/class names referenced.
     """
     refs: set[str] = set()
 
@@ -171,6 +204,17 @@ def _extract_names_from_annotation(annotation: cst.BaseExpression) -> set[str]:
             elif m.matches(slice_node, m.Subscript()):
                 assert isinstance(slice_node, cst.Subscript)
                 refs.update(_extract_names_from_annotation(slice_node))
+    elif m.matches(annotation, m.BinaryOperation()):
+        # Handle Union types: Input | Config
+        assert isinstance(annotation, cst.BinaryOperation)
+        if m.matches(annotation.operator, m.BitOr()):
+            refs.update(_extract_names_from_annotation(annotation.left))
+            refs.update(_extract_names_from_annotation(annotation.right))
+    elif m.matches(annotation, m.Attribute()):
+        # Handle module.Class - extract just the class name
+        assert isinstance(annotation, cst.Attribute)
+        if isinstance(annotation.attr, cst.Name):
+            refs.add(annotation.attr.value)
 
     return refs
 
@@ -192,21 +236,23 @@ def extract_class_bases(class_node: cst.ClassDef) -> set[str]:
     return refs
 
 
-def _extract_names_from_assign_value(value: cst.BaseExpression) -> set[str]:
-    """Extract function/class names referenced in an assignment value.
+def _extract_names_from_expression(expr: cst.BaseExpression) -> set[str]:
+    """Extract all function/class names referenced in an expression.
 
-    Walks the entire expression tree to find bare function calls and
-    class references.
+    Walks the expression tree to find:
+    - Function calls (bare and method calls)
+    - Bare name references (e.g., type hints, variables)
+    - Names inside lambdas
 
     Args:
-        value: The assignment value expression.
+        expr: The expression to walk.
 
     Returns:
         Set of function/class names referenced.
     """
     refs: set[str] = set()
 
-    class _CallVisitor(cst.CSTVisitor):
+    class _NameVisitor(cst.CSTVisitor):
         def __init__(self) -> None:
             self.names: set[str] = set()
 
@@ -224,14 +270,25 @@ def _extract_names_from_assign_value(value: cst.BaseExpression) -> set[str]:
                     if isinstance(func.attr, cst.Name):
                         self.names.add(func.attr.value)
             elif m.matches(node, m.Name()):
-                # Also extract bare names (e.g., type hints like list[_Provider])
+                # Extract bare names (e.g., type hints, variables, classes)
+                # But skip common builtins
                 assert isinstance(node, cst.Name)
-                self.names.add(node.value)
+                if node.value not in ("None", "True", "False", "self", "cls"):
+                    self.names.add(node.value)
+            # Lambda bodies can contain calls/refs
             return True
 
-    visitor = _CallVisitor()
-    value.visit(visitor)
+    visitor = _NameVisitor()
+    expr.visit(visitor)
     return visitor.names
+
+
+def _extract_names_from_assign_value(value: cst.BaseExpression) -> set[str]:
+    """Extract function/class names referenced in an assignment value.
+
+    Alias for _extract_names_from_expression for backwards compatibility.
+    """
+    return _extract_names_from_expression(value)
 
 
 def extract_class_body_type_refs(class_node: cst.ClassDef) -> set[str]:

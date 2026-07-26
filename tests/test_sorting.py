@@ -735,3 +735,71 @@ class _Provider:
 '''
         result = sort_source(code)
         assert result.index("class _Provider:") < result.index("PROVIDERS:")
+
+    def test_default_argument_calls_function(self):
+        """Regression: default args calling functions must be detected."""
+        code = '''
+def process(x: Item = get_default()) -> Item:
+    return x
+
+
+def get_default() -> Item:
+    return Item(name="default")
+
+
+class Item:
+    name: str
+'''
+        result = sort_source(code)
+        # Item class before process
+        assert result.index("class Item:") < result.index("def process")
+        # get_default before process (called in default)
+        assert result.index("def get_default") < result.index("def process")
+
+    def test_union_type_annotations(self):
+        """Regression: Union types (A | B) should be handled."""
+        code = '''
+def process(x: Input | Config) -> Output | Error:
+    return Output()
+
+
+class Input:
+    pass
+
+
+class Config:
+    pass
+
+
+class Output:
+    pass
+
+
+class Error:
+    pass
+'''
+        result = sort_source(code)
+        # All classes before process
+        assert result.index("class Input:") < result.index("def process")
+        assert result.index("class Config:") < result.index("def process")
+        assert result.index("class Output:") < result.index("def process")
+        assert result.index("class Error:") < result.index("def process")
+
+    def test_lambda_constant(self):
+        """Regression: lambda constants calling functions."""
+        code = '''
+OPERATION = lambda x: transform(x)
+
+
+def transform(x: Item) -> Item:
+    return x
+
+
+class Item:
+    pass
+'''
+        result = sort_source(code)
+        # transform OPERATION depends on, must come before
+        assert result.index("def transform") < result.index("OPERATION =")
+        # Item class before transform
+        assert result.index("class Item:") < result.index("def transform")
