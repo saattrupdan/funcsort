@@ -10,7 +10,12 @@ maintainers = [
   {name = "Dan Saattrup Smart", email = "saattrupdan@gmail.com"},
 ]
 requires-python = ">=3.12,<4.0"
-dependencies = []
+dependencies = [
+    "libcst>=1.8.6",
+]
+
+[project.scripts]
+funcsort = "funcsort.cli:main"
 
 [project.urls]
 Repository = "https://github.com/saattrupdan/funcsort"
@@ -81,9 +86,9 @@ ignore = [
   "ANN002",
   # Type annotations for **kwargs
   "ANN003",
-  # Always add blank line before class docstring
+  # Always add blank line before class docstring
   "D203",
-  # No new-line as first line of docstring
+  # No new-line as first line of docstring
   "D213",
 ]
 
@@ -125,3 +130,6 @@ testpaths = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/funcsort"]

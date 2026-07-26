@@ -90,8 +90,8 @@ Automatically sorting Python functions and modules.
 - Example:
 
   ```python
-  def process_items(items: list[Item]) -> list[Result]:
-      ...
+  def process_items(items: list[Item]) -> list[Result]: ...
+
 
   process_items(items=items)
   ```

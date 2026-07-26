@@ -1,0 +1,7 @@
+- id: funcsort
+  name: Sort Python functions by call hierarchy
+  description: Sorts Python functions and methods by call hierarchy (callers before callees)
+  entry: funcsort --fix
+  language: python
+  types: [python]
+  pass_filenames: false

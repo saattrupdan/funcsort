@@ -1,128 +1,118 @@
-<!-- This disables the "First line in file should be a top level heading" rule -->
-<!-- markdownlint-disable MD041 -->
-<a href="https://github.com/saattrupdan/funcsort">
-<img
- src="https://avatars.githubusercontent.com/u/3233492"
- width="175"
- height="175"
- align="right"
- alt="Dan Saattrup Smart"
-/>
-</a>
-
 # Funcsort
 
-Automatically sorting Python functions and modules.
+Automatically sort Python functions and methods by call hierarchy.
 
----
-
-[![Code Coverage](https://img.shields.io/badge/Coverage-0%25-red.svg)](https://github.com/saattrupdan/funcsort/tree/main/tests)
-[![License](https://img.shields.io/github/license/saattrupdan/funcsort)](https://github.com/saattrupdan/funcsort/blob/main/LICENSE)
-[![LastCommit](https://img.shields.io/github/last-commit/saattrupdan/funcsort)](https://github.com/saattrupdan/funcsort/commits/main)
-[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)](https://github.com/saattrupdan/funcsort/blob/main/CODE_OF_CONDUCT.md)
- Developer:
-
-- Dan Saattrup Smart (<saattrupdan@gmail.com>)
-
-## Setup
-
-### Installation
-
-1. Run `make install`, which sets up a virtual environment and all Python dependencies
-   therein.
-2. Run `source .venv/bin/activate` to activate the virtual environment.
-
-### Adding and Removing Packages
-
-To install new PyPI packages, run:
+## Installation
 
 ```bash
-uv add <package-name>
+uv add funcsort
 ```
 
-To remove them again, run:
+## CLI Usage
 
 ```bash
-uv remove <package-name>
+# Check if files are sorted (default)
+uv run funcsort [PATH]
+
+# Automatically fix sorting
+uv run funcsort --fix [PATH]
+
+# Verbose output
+uv run funcsort -v [PATH]
 ```
 
-To show all installed packages, run:
+The `PATH` argument can be a file or directory (defaults to current directory).
 
-```bash
-uv pip list
+**Exit codes:**
+
+- `0`: Success (files are sorted or were fixed with `--fix`)
+- `1`: Files need sorting (in check mode without `--fix`)
+
+## Sorting Rules
+
+### Functions
+
+Functions are sorted by top-down call hierarchy:
+
+1. `main` function is always first
+2. Functions that call other functions appear before their callees
+3. Ties (including circular dependencies) are broken alphabetically
+
+### Methods
+
+Methods within a class follow the same rules:
+
+1. `__init__` is always first
+2. Callers appear before callees
+3. Ties are broken alphabetically
+
+### What's Not Sorted
+
+- Top-level code (imports, constants, class definitions) remains in place
+- Nested functions are left untouched
+- Cross-module function calls are ignored
+- Cross-class method calls are ignored
+
+Decorators are preserved when functions are moved.
+
+## Pre-commit Hook
+
+Funcsort defines a pre-commit hook in `.pre-commit-hooks.yaml`. To use it locally:
+
+```yaml
+- repo: local
+  hooks:
+    - id: funcsort
+      name: Sort Python functions by call hierarchy
+      language: python
+      entry: uv run funcsort --fix
+      pass_filenames: false
+      types: [python]
 ```
 
-## All Built-in Commands
+### Configuration
 
-The project includes the following convenience commands:
+The hook supports `pass_filenames`:
 
-- `make install`: Install the project and its dependencies in a virtual environment.
-- `make install-pre-commit`: Install pre-commit hooks for linting, formatting and type
-  checking.
-- `make check`: Lint and format the code using `ruff`, and type check using `ty`.
-- `make test`: Run tests using `pytest` and update the coverage badge in the readme.
-- `make docker`: Build a Docker image and run the Docker container.
-- `make tree`: Show the project structure as a tree.
+- **Default (`false`):** Runs on all `.py` files in the repository
+- **Set to `true`:** Runs only on staged files
 
-## A Word on Modules and Scripts
+```yaml
+- repo: local
+  hooks:
+    - id: funcsort
+      language: python
+      entry: uv run funcsort --fix
+      pass_filenames: true
+      types: [python]
+```
 
-In the `src` directory there are two subdirectories, `funcsort`
-and `scripts`. This is a brief explanation of the differences between the two.
+## Example
 
-### Modules
-
-All Python files in the `funcsort` directory are _modules_
-internal to the project package. Examples here could be a general data loading script, a
-definition of a model, or a training function. Think of modules as all the building
-blocks of a project.
-
-When a module is importing functions/classes from other modules we use the _relative
-import_ notation - here's an example:
+Before:
 
 ```python
-from .other_module import some_function
+def helper():
+    return 42
+
+
+def main():
+    return helper()
 ```
 
-### Scripts
-
-Python files in the `scripts` folder are scripts, which are short code snippets that are
-_external_ to the project package, and which is meant to actually run the code. As such,
-_only_ scripts will be called from the terminal. An analogy here is that the internal
-`numpy` code are all modules, but the Python code you write where you import some
-`numpy` functions and actually run them, that a script.
-
-When importing module functions/classes when you're in a script, you do it like you
-would normally import from any other package:
+After `funcsort --fix`:
 
 ```python
-from funcsort import some_function
+def main():
+    return helper()
+
+
+def helper():
+    return 42
 ```
 
-Note that this is also how we import functions/classes in tests, since each test Python
-file is also a Python script, rather than a module.
+## Limitations
 
-## Features
-
-### Docker Setup
-
-A Dockerfile is included in the new repositories, which by default runs
-`src/scripts/main.py`. You can build the Docker image and run the Docker container by
-running `make docker`.
-
-### Automatic Test Coverage Calculation
-
-Run `make test` to test your code, which also updates the "coverage badge" in the
-README, showing you how much of your code base that is currently being tested.
-
-### Continuous Integration
-
-Github CI pipelines are included in the repo, running all the tests in the `tests`
-directory, as well as building online documentation, if Github Pages has been enabled
-for the repository (can be enabled on Github in the repository settings).
-
-### Code Spaces
-
-Code Spaces is a new feature on Github, that allows you to develop on a project
-completely in the cloud, without having to do any local setup at all. This repo comes
-included with a configuration file for running code spaces on Github. Simply press the `<> Code` button and add a code space to get started, which will open
-a VSCode window directly in your browser.
+- Only sorts top-level functions and class methods
+- Does not handle complex cross-module dependency analysis
+- Nested functions remain in their original positions
