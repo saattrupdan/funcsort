@@ -35,6 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Comments on constant definitions now preserved during sorting
+- Assert statements now sorted after their dependencies
+- Entry point (`main`) now correctly prioritised among functions only (not constants)
+- Constants now use correct spacing (1 blank line between constants, 2 before functions)
+- Assert statements don't get extra blank lines before them (stick to previous item)
+- Unused constants sorted alphabetically at end of constant block
 - Proper PEP 8 spacing: 1 blank line after imports, 2 blank lines between sections
 - Multi-target assignments (`a, b, c = ...`) parsed as single sortable unit
 - Call graph extraction now properly traverses function bodies (was blocking on first
