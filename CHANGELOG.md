@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Comprehensive test suite (`tests/test_sorting.py`) covering module-level functions,
+  class methods, decorators, cycles, and edge cases
+- Support for detecting method calls (`self.method()`) within classes
+
+### Changed
+
+- Function ordering now puts definitions before usages (callees before callers)
+- Module rewrite order: docstring → imports → functions → constants → `__main__` blocks
+- Updated AGENTS.md with correct function ordering conventions
+
+### Fixed
+
+- Call graph extraction now properly traverses function bodies (was blocking on first
+  `FunctionDef`)
+- Decorator dependencies now correctly ordered (decorator definitions before usages)
+- Constants that call functions now correctly placed after their dependencies
+- Cycle handling in topological sort (mutual recursion)
+- Import and docstring detection in module rewriting
+
 ## [v0.1.0] - 2026-07-26
 
 ### Added
