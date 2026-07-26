@@ -147,6 +147,7 @@ name = "funcsort"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "click" },
     { name = "libcst" },
     { name = "pathspec" },
 ]
@@ -167,6 +168,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "click", specifier = ">=8.4.2" },
     { name = "libcst", specifier = ">=1.8.6" },
     { name = "pathspec", specifier = ">=1.1.1" },
 ]
