@@ -9,7 +9,9 @@ from .models import SortableUnit, _Statement
 
 
 def parse_module(source: str) -> tuple[list[SortableUnit], list[_Statement]]:
-    """Parse a Python module into sortable functions/classes and fixed nodes.
+    """Parse a Python module into sortable units and fixed nodes.
+
+    Sortable units include functions, classes, and constants (assignments).
 
     Args:
         source: Python source code.
@@ -36,6 +38,40 @@ def parse_module(source: str) -> tuple[list[SortableUnit], list[_Statement]]:
             units.append(
                 SortableUnit(name=class_def.name.value, node=class_def, is_entry=False)
             )
+        elif m.matches(statement, m.SimpleStatementLine()):
+            assert isinstance(statement, cst.SimpleStatementLine)
+            # Check for annotated assignments and regular assignments
+            for inner_stmt in statement.body:
+                if m.matches(inner_stmt, m.AnnAssign()):
+                    assert isinstance(inner_stmt, cst.AnnAssign)
+                    if inner_stmt.target and m.matches(inner_stmt.target, m.Name()):
+                        assert isinstance(inner_stmt.target, cst.Name)
+                        units.append(
+                            SortableUnit(
+                                name=inner_stmt.target.value,
+                                node=inner_stmt,
+                                is_entry=False,
+                            )
+                        )
+                        break
+                elif m.matches(inner_stmt, m.Assign()):
+                    assert isinstance(inner_stmt, cst.Assign)
+                    # Handle single-target assignments
+                    if len(inner_stmt.targets) == 1 and m.matches(
+                        inner_stmt.targets[0].target, m.Name()
+                    ):
+                        assert isinstance(inner_stmt.targets[0].target, cst.Name)
+                        units.append(
+                            SortableUnit(
+                                name=inner_stmt.targets[0].target.value,
+                                node=inner_stmt,
+                                is_entry=False,
+                            )
+                        )
+                        break
+            else:
+                # No assignment found in this statement, treat as fixed
+                fixed_nodes.append(statement)
         else:
             fixed_nodes.append(statement)
 

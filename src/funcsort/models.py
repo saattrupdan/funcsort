@@ -10,14 +10,14 @@ _Statement = cst.SimpleStatementLine | cst.BaseCompoundStatement
 
 @dc.dataclass
 class SortableUnit:
-    """A sortable function or method with its AST node.
+    """A sortable unit (function, class, or constant) with its AST node.
 
     Attributes:
-        name: Function or method name.
-        node: The libcst FunctionDef node.
+        name: Function, class, or constant name.
+        node: The libcst node (FunctionDef, ClassDef, Assign, or AnnAssign).
         is_entry: Whether this is an entry point (main or __init__).
     """
 
     name: str
-    node: cst.FunctionDef
+    node: cst.FunctionDef | cst.ClassDef | cst.Assign | cst.AnnAssign
     is_entry: bool = False

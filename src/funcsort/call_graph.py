@@ -67,6 +67,18 @@ def build_call_graph(units: list[SortableUnit]) -> dict[str, set[str]]:
             base_refs = extract_class_bases(unit.node)
             body_refs = extract_class_body_type_refs(unit.node)
             deps = base_refs | body_refs
+        elif isinstance(unit.node, cst.AnnAssign):
+            # Constants with type annotations depend on the types
+            if unit.node.annotation:
+                type_refs = _extract_names_from_annotation(unit.node.annotation.annotation)
+                deps = type_refs
+            if unit.node.value:
+                value_refs = _extract_names_from_assign_value(unit.node.value)
+                deps = deps | value_refs
+        elif isinstance(unit.node, cst.Assign):
+            # Constants with assignments depend on any calls in the value
+            value_refs = _extract_names_from_assign_value(unit.node.value)
+            deps = value_refs
         # Filter to only sibling units
         graph[unit.name] = deps & unit_names
 

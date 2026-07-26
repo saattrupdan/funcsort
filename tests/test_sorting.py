@@ -591,3 +591,36 @@ class DummyDevice:
 '''
         result = sort_source(code)
         assert result.index("class DummyDevice:") < result.index("class DummyBenchmarkConfig:")
+
+
+class TestConstantDependencies:
+    """Tests for constants that depend on classes."""
+
+    def test_class_before_constants_using_it(self):
+        """Classes should come before constants using them in type hints."""
+        code = '''"""Test module."""
+
+PROVIDERS: list[_Provider] = []
+
+
+class _Provider:
+    """A provider."""
+    name: str
+'''
+        result = sort_source(code)
+        # _Provider class should come before PROVIDERS constant
+        assert result.index("class _Provider:") < result.index("PROVIDERS:")
+
+    def test_constant_order_by_dependency(self):
+        """Constants should be ordered by their dependencies."""
+        code = '''"""Test module."""
+
+DEPENDENTS: list[Base] = []
+
+
+class Base:
+    """Base class."""
+    pass
+'''
+        result = sort_source(code)
+        assert result.index("class Base:") < result.index("DEPENDENTS:")

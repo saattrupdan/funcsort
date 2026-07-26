@@ -19,7 +19,7 @@ def rewrite_module(
     Args:
         units: All sortable units.
         fixed_nodes: Non-sortable nodes to keep in place.
-        ordered_names: Function names in desired order.
+        ordered_names: Unit names in desired order.
         header: Module header to preserve (e.g., uv script metadata).
 
     Returns:
@@ -45,19 +45,19 @@ def rewrite_module(
         else:
             other_fixed.append(node)
 
-    # Order: docstring, imports, constants, functions/classes, __main__ blocks
-    # Constants must come before functions/classes that use them in type hints
+    # Order: docstring, imports, sorted units (functions/classes/constants), __main__ blocks
     new_body.extend(docstring)
     new_body.extend(imports)
 
-    # Constants first (may be referenced in type hints)
-    new_body.extend(other_fixed)
-
-    # Then sorted functions and classes
+    # Add all sorted units in dependency order
+    # Wrap assignments in SimpleStatementLine
     for name in ordered_names:
         unit = unit_map[name]
         if m.matches(unit.node, m.FunctionDef()) or m.matches(unit.node, m.ClassDef()):
             new_body.append(unit.node)
+        elif isinstance(unit.node, (cst.Assign, cst.AnnAssign)):
+            # Wrap assignment in SimpleStatementLine
+            new_body.append(cst.SimpleStatementLine(body=[unit.node]))
 
     # Finally __main__ blocks
     new_body.extend(main_blocks)
