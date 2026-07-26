@@ -14,10 +14,10 @@ class SortableUnit:
 
     Attributes:
         name: Function, class, or constant name.
-        node: The libcst node (FunctionDef, ClassDef, Assign, or AnnAssign).
+        node: The libcst node (FunctionDef, ClassDef, or SimpleStatementLine for constants).
         is_entry: Whether this is an entry point (main or __init__).
     """
 
     name: str
-    node: cst.FunctionDef | cst.ClassDef | cst.Assign | cst.AnnAssign
+    node: cst.FunctionDef | cst.ClassDef | cst.SimpleStatementLine
     is_entry: bool = False

@@ -50,27 +50,33 @@ def rewrite_module(
     new_body.extend(imports)
     new_body.extend(other_fixed)  # Preserves standalone comments
 
-    # Add TWO blank lines after imports/comments before sorted units (PEP 8)
-    if ordered_names:
-        new_body.append(cst.EmptyLine())
-        new_body.append(cst.EmptyLine())
-
-    # Add all sorted units in dependency order, with spacing
-    # Strip leading empty lines from all nodes since we control spacing
+    # Add sorted units in dependency order, with proper spacing
+    # Constants get 1 blank line before, functions get 2 blank lines before (but only if preceded by constant)
     prev_was_constant = False
-    for i, name in enumerate(ordered_names):
+    started = False
+    for name in ordered_names:
         unit = unit_map[name]
-        is_constant = isinstance(unit.node, (cst.Assign, cst.AnnAssign))
+        is_constant = isinstance(unit.node, cst.SimpleStatementLine)
 
-        # Add TWO blank lines between constants and functions (PEP 8)
-        if i > 0 and prev_was_constant != is_constant:
-            if is_constant or i > 0:  # Always add between different types
-                new_body.append(cst.EmptyLine())
-                new_body.append(cst.EmptyLine())
+        # Determine spacing before this unit
+        if not started:
+            # First unit: 1 blank line after imports
+            new_body.append(cst.EmptyLine())
+            started = True
+        elif prev_was_constant != is_constant:
+            # Transition between constants and functions: 2 blank lines
+            new_body.append(cst.EmptyLine())
+            new_body.append(cst.EmptyLine())
 
+        # Add the unit
         if is_constant:
-            # Wrap assignment in SimpleStatementLine
-            new_body.append(cst.SimpleStatementLine(body=[unit.node]))
+            assert isinstance(unit.node, cst.SimpleStatementLine)
+            # Strip leading blank lines but preserve comments
+            comment_lines = tuple(
+                ll for ll in unit.node.leading_lines if ll.comment
+            )
+            stmt = unit.node.with_changes(leading_lines=comment_lines)
+            new_body.append(stmt)
         elif m.matches(unit.node, m.FunctionDef()):
             assert isinstance(unit.node, cst.FunctionDef)
             func = unit.node.with_changes(leading_lines=())

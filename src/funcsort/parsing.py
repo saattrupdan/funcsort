@@ -49,7 +49,7 @@ def parse_module(source: str) -> tuple[list[SortableUnit], list[_Statement]]:
                         units.append(
                             SortableUnit(
                                 name=inner_stmt.target.value,
-                                node=inner_stmt,
+                                node=statement,  # Store the full SimpleStatementLine to preserve comments
                                 is_entry=False,
                             )
                         )
@@ -63,7 +63,7 @@ def parse_module(source: str) -> tuple[list[SortableUnit], list[_Statement]]:
                         units.append(
                             SortableUnit(
                                 name=target.value,
-                                node=inner_stmt,
+                                node=statement,  # Store the full SimpleStatementLine to preserve comments
                                 is_entry=False,
                             )
                         )
@@ -80,7 +80,7 @@ def parse_module(source: str) -> tuple[list[SortableUnit], list[_Statement]]:
                             units.append(
                                 SortableUnit(
                                     name=first_elem.value,
-                                    node=inner_stmt,
+                                    node=statement,  # Store the full SimpleStatementLine to preserve comments
                                     is_entry=False,
                                 )
                             )
