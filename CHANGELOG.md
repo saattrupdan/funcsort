@@ -7,14 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [v0.1.1] - 2026-07-26
-
-### Fixed
-
-- Decorator definitions now correctly placed before their usages when both are defined in the same module
-
-## [v0.0.1] - 2026-07-26
-
 ## [v0.1.0] - 2026-07-26
 
 ### Added
@@ -23,16 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pre-commit hook for automatic sorting
 - `.gitignore` support to skip ignored files/directories
 - Verbose mode (`-v`/`--verbose`) for detailed output
+- `make check` requirement before version bumping
 
 ### Changed
 
-- Functions sorted with `main` first, then by call graph (callers before callees)
-- Methods sorted with `__init__` first, same call hierarchy rules within each class
-- Exit code 0 when `--fix` is applied successfully
-- Exit code 1 in check mode when files need sorting
+- Scripts moved to `src/scripts/` directory
+- Moved source code to `src/funcsort/` structure
 
 ### Fixed
 
-- Type alias comment format (no colon, no trailing period)
-- Consolidated `_Statement` type alias to single location
-- Fixed `ty` compatibility for libcst visitor pattern
+- Decorator definitions now correctly placed before their usages when both
+  are defined in the same module
+- Added `click` as a runtime dependency
+- Markdown line length violations in changelog

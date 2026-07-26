@@ -8,6 +8,7 @@
 import datetime as dt
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -63,8 +64,18 @@ def set_new_version(major: int, minor: int, patch: int) -> None:
     Raises:
         RuntimeError:
             If no version can be found in the `pyproject.toml` file.
+            If `make check` fails.
     """
     version = f"{major}.{minor}.{patch}"
+
+    # Require all checks to pass before versioning
+    print("Running `make check`...")
+    result = subprocess.run(["make", "check"], capture_output=True, text=False)
+    if result.returncode != 0:
+        print("\n`make check` failed. Aborting version bump.")
+        print("Please fix the issues before releasing a new version.")
+        sys.exit(1)
+    print("✓ All checks passed.")
 
     # Get current changelog and ensure that it has an [Unreleased] entry
     changelog_path = Path("CHANGELOG.md")
