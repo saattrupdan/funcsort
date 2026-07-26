@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   functions using them)
 - Support for generic type annotations (`list[T]`, `dict[K, V]`, etc.)
 - Support for type hints in class bodies (class attributes with type annotations)
+- Support for class instantiations in class body assignments (e.g. `device = DummyDevice()`)
 
 ### Changed
 
