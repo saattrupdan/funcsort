@@ -830,3 +830,19 @@ def main() -> None:
         result = sort_source(code)
         # CONSTANT should come before main
         assert result.index("CONSTANT =") < result.index("def main()")
+
+    def test_multi_target_assignment(self):
+        """Multi-target assignments should be preserved."""
+        code = '''
+RANDOM_STATE = 4242
+TRAIN_SIZE, VAL_SIZE, TEST_SIZE = 1024, 256, 2048
+ORIGINAL_REPO_ID = "x"
+'''
+        result = sort_source(code)
+        # All constants should be present
+        assert "RANDOM_STATE = 4242" in result
+        assert "TRAIN_SIZE, VAL_SIZE, TEST_SIZE = 1024, 256, 2048" in result
+        assert "ORIGINAL_REPO_ID" in result
+        # Should be alphabetically sorted (no dependencies)
+        assert result.index("ORIGINAL_REPO_ID") < result.index("RANDOM_STATE")
+        assert result.index("RANDOM_STATE") < result.index("TRAIN_SIZE")

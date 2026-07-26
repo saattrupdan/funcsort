@@ -56,19 +56,35 @@ def parse_module(source: str) -> tuple[list[SortableUnit], list[_Statement]]:
                         break
                 elif m.matches(inner_stmt, m.Assign()):
                     assert isinstance(inner_stmt, cst.Assign)
-                    # Handle single-target assignments
-                    if len(inner_stmt.targets) == 1 and m.matches(
-                        inner_stmt.targets[0].target, m.Name()
-                    ):
-                        assert isinstance(inner_stmt.targets[0].target, cst.Name)
+                    # Handle single-target and multi-target assignments
+                    target = inner_stmt.targets[0].target
+                    if m.matches(target, m.Name()):
+                        assert isinstance(target, cst.Name)
                         units.append(
                             SortableUnit(
-                                name=inner_stmt.targets[0].target.value,
+                                name=target.value,
                                 node=inner_stmt,
                                 is_entry=False,
                             )
                         )
                         break
+                    elif m.matches(target, m.Tuple()):
+                        # Multi-target: TRAIN_SIZE, VAL_SIZE, TEST_SIZE = ...
+                        # Use the first name for sorting purposes
+                        assert isinstance(target, cst.Tuple)
+                        if target.elements and m.matches(
+                            target.elements[0].value, m.Name()
+                        ):
+                            first_elem = target.elements[0].value
+                            assert isinstance(first_elem, cst.Name)
+                            units.append(
+                                SortableUnit(
+                                    name=first_elem.value,
+                                    node=inner_stmt,
+                                    is_entry=False,
+                                )
+                            )
+                            break
             else:
                 # No assignment found in this statement, treat as fixed
                 fixed_nodes.append(statement)
