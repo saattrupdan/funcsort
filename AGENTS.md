@@ -1,130 +1,130 @@
 # Funcsort
 
-Automatically sorting Python functions and modules.
+CLI tool and pre-commit hook that automatically sorts Python functions and methods by call hierarchy. Published at https://github.com/saattrupdan/funcsort.
 
-## Python Conventions
+## Stack
 
-### Development Workflow
+- Python 3.12+
+- Package manager: `uv`
+- Code formatter/linter: `ruff`
+- Type checker: `ty`
+- AST parser: `libcst` (preserves formatting during rewrites)
+- Gitignore parsing: `pathspec`
 
-- Use `uv run` for all script and command execution
-- Use `pyproject.toml`, not `requirements.txt` for dependency management
-- Do not read entire files, find the relevant line(s) with command-line tools, and only
-  read those lines
+## Layout
 
-### Code Organisation
+```
+funcsort/
+├── AGENTS.md              # Agent/contributor orientation (this file)
+├── CHANGELOG.md           # Version history
+├── README.md              # User documentation
+├── pyproject.toml         # Project config, dependencies, tool settings
+├── uv.lock                # Locked dependencies
+├── .gitignore             # Git ignore patterns
+├── .pre-commit-hooks.yaml # Hook definition for external use
+├── .pre-commit-config.yaml # Local pre-commit configuration
+├── Makefile               # Convenience commands
+├── src/
+│   ├── funcsort/          # Package source code
+│   │   ├── __init__.py
+│   │   ├── call_graph.py  # Build call graphs from function bodies
+│   │   ├── cli.py         # Click-based CLI entry point
+│   │   ├── core.py        # Main sorting orchestration (libcst visitor)
+│   │   ├── models.py      # Data models (SortableUnit, type aliases)
+│   │   ├── ordering.py    # Topological sort by call hierarchy
+│   │   ├── parsing.py     # Extract functions/methods using libcst
+│   │   └── rewrite.py     # Reassemble sorted code
+│   └── scripts/           # Executable scripts
+│       ├── funcsort.py    # Script wrapper (uv run entry point)
+│       └── versioning.py  # Version bumping and release automation
+└── tests/                 # Test files (currently none per requirement)
+```
 
-- Keep modules focused and cohesive
-- Prefer many small modules over few large ones
-- All code modules are in the `src/<project_name>` directory. These are not executed but
-  are imported by the scripts
-- All scripts are in the `src/scripts` directory. These are executed with `uv run`
-- All tests are in the `tests/` directory
-- Configs are sometimes available and if so, they are in the `config/` directory
-- There will always be a `pyproject.toml` file in the root directory
-- Use `uv add <package>` to add packages to the project, do not just add them manually
-  to `pyproject.toml`. Add development dependencies with `uv add --group=dev <package>`
-- Use the `make tree` command to see the directory structure
+## Running it
 
-### Code Quality
+```bash
+# Check if files are sorted
+uv run funcsort [PATH]
 
-#### Quality Checkers
+# Automatically fix sorting
+uv run funcsort --fix [PATH]
 
-- Run `make check` to run formatters, linters and type checkers.
-- Run tests with `make test`.
+# Verbose output
+uv run funcsort -v [PATH]
 
-#### General Code Conventions
+# Run quality checks
+make check
 
-- Code should always fit within 88 characters
-- All imports should happen at the top of each file. The only excuse for not doing this
-  is if the import would cause a circular import, in which case this should be stated in
-  a comment next to the import statement
-- Never use the old %-style string formatting. Use f-strings instead
-- Never use `print` statements - use a logger instead
-- Functions and classes in a module or script should be ordered from the most high-level
-  to the most low-level. For example, if a function is a helper function that is only
-  used by another function, then the helper function should come after the function that
-  uses it. If there is a `main` function, then it should always be first
-- When we import things in modules from other modules in the package, we always do it
-  using relative imports:
+# Run versioning script
+uv run src/scripts/versioning.py <major|minor|patch>
+```
 
-  ```python title="src/mypackage/module.py"
-  from .another_module import some_function
-  ```
+## Testing
 
-- When we import things in scripts from other modules or other scripts, we always do it
-  using absolute imports:
+No tests (explicit requirement #5).
 
-  ```python title="src/scripts/script.py"
-  from mypackage.module import some_function
-  from another_script import some_other_function
-  ```
+## Conventions
 
-  This also holds when we're importing things from modules in our tests.
+### Code style
 
-#### Type Hints
+- British English in code and docs
+- 88-character line width (enforced by ruff format)
+- f-strings only (no %-style formatting)
+- Imports at top of file
+- Use `import typing as t` and `import collections.abc as c`
+- Type aliases use `# Type alias for...` format (no colon, no trailing period)
+- Inline comments: two spaces before `#` (PEP 8 E261)
 
-- Fully type-annotate all functions, methods, and variables
-- Target Python 3.12+ syntax:
-  - Use `list[T]`, `dict[K, V]`, `set[T]` (not `List`, `Dict`, `Set` from typing)
-  - Use `X | Y` for unions (not `Union[X, Y]`)
-  - Use `X | None` for optional types (not `Optional[X]`)
-- Always use `import typing as t` and use the `t.` prefix for types from the typing
-  module, such as `t.Literal`, `t.TypeAlias` or `t.TYPE_CHECKING`
-- For `Iterable`, `Generator` and `Callable`, use these from the `collections.abc`
-  module, not from `typing`. Import this as `import collections.abc as c` and refer to
-  the types as `c.Iterable`, `c.Generator` and `c.Callable`, etc.
-- Try not to use the `Any` type. You can often use`t.TypeVar` instead, but always give
-  such type variables meaningful names, and not just single letter names like `T`. The
-  main place where `Any` types can be acceptable is as the return type of a dictionary
-  with mixed outputs, e.g., `dict[str, t.Any]`, since otherwise you would encounter
-  issues with the type checker. Note that `list[t.Any]` is not okay.
-- Use the `None` return type for functions that do not return anything. Never use the
-  `NoReturn` type.
+### Type hints
 
-#### Functions
+- Full type annotations on all functions
+- Python 3.12+ syntax (`list[T]`, `dict[K, V]`, `X | Y`, `X | None`)
+- Avoid `Any` — use `t.TypeVar` with meaningful names instead
+- Use `None` return type for void functions (never `NoReturn`)
 
-- Use a single leading underscore (`_`) for protected functions which should not be
-  imported from outside the module, or for protected methods which should not be used
-  outside the class they are defined in
-- Always use keyword arguments when calling functions, never positional arguments
-- Example:
+### Function ordering
 
-  ```python
-  def process_items(items: list[Item]) -> list[Result]: ...
+- `main` functions first
+- Callers before callees
+- Ties broken alphabetically
+- For classes: `__init__` first, then same call hierarchy rules
 
+### Commit messages
 
-  process_items(items=items)
-  ```
+Conventional Commits format:
 
-### Documentation
+```text
+<type>: <description>
+```
 
-- Avoid tutorial-style `#` comments that explain what code does.
-- Comments should explain **why**, not **what** (the code itself should be
-  self-explanatory)
-- Use Google-style docstrings for all public functions, classes, and modules.
-- Always include a newline after the name of each argument and exception in the
-  docstring.
-- Always prefer ascii characters over unicode (e.g., arrows as -> over →)
-- Example:
+Types:
+- `feat`: New feature
+- `fix`: Bug fix
+- `docs`: Documentation only
+- `chore`: Tooling, dependencies, configuration
+- `style`: Formatting, code style (no logic changes)
 
-  ```python
-  def process_items(items: list[Item], log: bool) -> list[Result]:
-      """Process items and return results.
+### Release process
 
-      Args:
-          items:
-            List of items to process.
-          log:
-            Whether to log progress.
+1. Update `CHANGELOG.md` with changes under `[Unreleased]`
+2. Run `uv run src/scripts/versioning.py <major|minor|patch>`
+   - This updates version in `pyproject.toml`
+   - Moves `[Unreleased]` to versioned section in `CHANGELOG.md`
+   - Commits, tags, and pushes to GitHub
 
-      Returns:
-          List of processed results.
+## Gotchas
 
-      Raises:
-          ValueError:
-            If items list is empty.
-      """
-      if log:
-          logger.info("Processing items")
-      return batch_process(items=items)
-  ```
+- **libcst required**: Standard `ast` module doesn't preserve comments/decorators. All parsing uses `libcst`.
+- **No cross-module analysis**: funcsort only sorts within a single file. Cross-file dependencies are ignored.
+- **Nested functions ignored**: Only top-level functions and class methods are sorted.
+- **Exit codes**:
+  - `0`: Success (files sorted or already correct)
+  - `1`: Files need sorting (check mode without `--fix`)
+  - `0`: After `--fix` is applied (even if changes were made)
+- **`.gitignore` support**: Files/directories in `.gitignore` are automatically skipped.
+- **`original_node` parameter**: Required by libcst's visitor pattern — keep the name even if unused (rename breaks `ty`'s override checking). Suppress with `# noqa: ARG002`.
+- **Type alias location**: `_Statement` defined in `models.py` only — import from there, don't redefine.
+- **Pre-commit hook**: Default `pass_filenames: false` runs on all `.py` files. Set to `true` for staged files only.
+- **Unicode symbols in output**:
+  - `✓` for success
+  - `✗` for check failures
