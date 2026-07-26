@@ -12,6 +12,7 @@ def rewrite_module(
     units: list[SortableUnit],
     fixed_nodes: list[_Statement],
     ordered_names: list[str],
+    original_body: list[_Statement] | None = None,
     header: str = "",
 ) -> str:
     """Rewrite a module with functions in the specified order.
@@ -20,6 +21,8 @@ def rewrite_module(
         units: All sortable units.
         fixed_nodes: Non-sortable nodes to keep in place.
         ordered_names: Unit names in desired order.
+        original_body: All top-level statements in original source order, used to
+            tell whether two constants were adjacent in the source.
         header: Module header to preserve (e.g., uv script metadata).
 
     Returns:
@@ -27,6 +30,14 @@ def rewrite_module(
     """
     unit_map = {unit.name: unit for unit in units}
     new_body: list[_Statement] = []
+
+    # Map each original statement to the one that preceded it in the source, so we
+    # can tell whether a constant kept its original neighbour (and thus its original
+    # blank-line separation) or was moved next to a different one.
+    original_body = original_body or []
+    predecessor: dict[int, _Statement | None] = {}
+    for i, node in enumerate(original_body):
+        predecessor[id(node)] = original_body[i - 1] if i > 0 else None
 
     # Separate imports, docstring, and other fixed nodes
     docstring: list[_Statement] = []
@@ -45,80 +56,102 @@ def rewrite_module(
         else:
             other_fixed.append(node)
 
-    # Order: docstring, imports, comments, sorted units, __main__ blocks
+    # Header region: docstring, then imports (their original blank-line grouping is
+    # preserved via each node's leading_lines).
     new_body.extend(docstring)
     new_body.extend(imports)
-    # other_fixed includes standalone comments and module-level statements
-    # (like logging.basicConfig()) - need 2 blank lines after imports
-    if other_fixed:
-        new_body.append(cst.EmptyLine())
-        new_body.append(cst.EmptyLine())
-        for node in other_fixed:
-            # Strip leading lines from module-level statements
-            if isinstance(node, cst.SimpleStatementLine):
-                node = node.with_changes(leading_lines=())
+
+    # Everything else, in order: module-level calls/statements, sorted units, then
+    # __main__ blocks. Spacing is applied explicitly based on statement kinds.
+    if imports:
+        prev_kind: str | None = "import"
+        prev_node: _Statement | None = imports[-1]
+    elif docstring:
+        prev_kind, prev_node = "docstring", docstring[0]
+    else:
+        prev_kind, prev_node = None, None
+
+    sequence: list[tuple[str, _Statement]] = [("call", node) for node in other_fixed]
+    for name in ordered_names:
+        sequence.append((_category(unit_map[name].node, name), unit_map[name].node))
+    sequence.extend(("main", node) for node in main_blocks)
+
+    for kind, node in sequence:
+        # Constants keep their original blank-line separation when they still follow
+        # the statement they followed in the source; otherwise spacing is normalised.
+        if (
+            kind == "const"
+            and prev_kind not in (None, "func", "class", "main")
+            and prev_node is not None
+            and predecessor.get(id(node)) is prev_node
+        ):
             new_body.append(node)
-
-    # Add sorted units in dependency order, with proper spacing
-    # PEP 8: 2 blank lines before functions/classes, constants grouped together
-    # Asserts (names starting with _assert) don't get blank lines before them
-    started = False
-    prev_is_constant = False
-    for i, name in enumerate(ordered_names):
-        unit = unit_map[name]
-        is_constant = isinstance(unit.node, cst.SimpleStatementLine)
-        is_assert = name.startswith('_assert')
-
-        # Determine spacing before this unit
-        if not started:
-            # First unit: need 2 blank lines after imports/other_fixed
-            new_body.append(cst.EmptyLine())
-            new_body.append(cst.EmptyLine())
-            started = True
-            prev_is_constant = is_constant
-        elif is_assert:
-            # Asserts don't get blank lines - they stick to previous item
-            pass
-        elif not prev_is_constant:
-            # Function after function: 2 blank lines
-            new_body.append(cst.EmptyLine())
-            new_body.append(cst.EmptyLine())
-        elif is_constant and prev_is_constant:
-            # Constant after constant: no blank line (keep together)
-            pass
         else:
-            # Transition from constant to function: 2 blank lines
-            new_body.append(cst.EmptyLine())
-            new_body.append(cst.EmptyLine())
-        
-        prev_is_constant = is_constant
-
-        # Add the unit
-        if is_constant:
-            assert isinstance(unit.node, cst.SimpleStatementLine)
-            # Strip leading blank lines but preserve comments
-            comment_lines = tuple(
-                ll for ll in unit.node.leading_lines if ll.comment
-            )
-            stmt = unit.node.with_changes(leading_lines=comment_lines)
-            new_body.append(stmt)
-        elif m.matches(unit.node, m.FunctionDef()):
-            assert isinstance(unit.node, cst.FunctionDef)
-            func = unit.node.with_changes(leading_lines=())
-            new_body.append(func)
-        elif m.matches(unit.node, m.ClassDef()):
-            assert isinstance(unit.node, cst.ClassDef)
-            cls = unit.node.with_changes(leading_lines=())
-            new_body.append(cls)
-
-    # Finally __main__ blocks
-    new_body.extend(main_blocks)
+            for _ in range(_blanks_before(prev_kind, kind)):
+                new_body.append(cst.EmptyLine())
+            new_body.append(_strip_leading(node))
+        prev_kind, prev_node = kind, node
 
     module = cst.Module(body=new_body)
     code = module.code
     if header:
         code = header + "\n\n" + code
     return code
+
+
+def _category(node: _Statement, name: str) -> str:
+    """Classify a statement for spacing purposes.
+
+    Returns:
+        One of ``"func"``, ``"class"``, ``"assert"`` or ``"const"``.
+    """
+    if m.matches(node, m.FunctionDef()):
+        return "func"
+    if m.matches(node, m.ClassDef()):
+        return "class"
+    if name.startswith("_assert"):
+        return "assert"
+    return "const"
+
+
+def _blanks_before(prev: str | None, cur: str) -> int:
+    """Return the number of blank lines to insert before ``cur`` given ``prev``.
+
+    Rules:
+    - Nothing precedes the first statement.
+    - Functions, classes and ``__main__`` blocks get two blank lines.
+    - Asserts stick to the statement they follow.
+    - A constant or module-level call gets two blank lines after a function/class,
+      no blank line after another constant (constants are grouped), and one blank
+      line after imports/docstring/another call.
+
+    Returns:
+        Number of blank lines (0, 1 or 2).
+    """
+    if prev is None:
+        return 0
+    if cur in ("func", "class", "main"):
+        return 2
+    if cur == "assert":
+        return 0
+    if prev in ("func", "class", "main"):
+        return 2
+    if prev == "const":
+        return 0
+    return 1
+
+
+def _strip_leading(node: _Statement) -> _Statement:
+    """Strip leading blank lines from a statement, preserving comment lines.
+
+    Returns:
+        The statement with blank leading lines removed.
+    """
+    if isinstance(node, cst.SimpleStatementLine):
+        return node.with_changes(
+            leading_lines=tuple(ll for ll in node.leading_lines if ll.comment)
+        )
+    return node.with_changes(leading_lines=())
 
 
 def rewrite_class_body(

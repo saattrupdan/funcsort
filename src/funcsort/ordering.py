@@ -1,4 +1,4 @@
-"""Topological ordering of functions by call hierarchy."""
+"""Topological ordering of functions, classes and constants by call hierarchy."""
 
 from collections.abc import Iterable
 
@@ -8,139 +8,100 @@ def order_by_call_hierarchy(
     edges: dict[str, set[str]],
     entry_name: str | None = None,
     function_names: set[str] | None = None,
+    class_names: set[str] | None = None,
 ) -> list[str]:
-    """Order function names by call hierarchy.
+    """Order units (functions, classes, constants) by call hierarchy.
 
-    Ordering semantics:
-    1. Constants that don't depend on functions come first (in dependency order)
-    2. Functions (entry point first, then others in dependency order)
-    3. Constants that depend on functions come after functions (in dependency order)
+    Ordering:
+    1. Independent constants (no in-module function/class dependency), in original
+       source order.
+    2. Dependent constants, each preceded by the functions/classes it depends on
+       (callees first), in original source order.
+    3. Remaining classes, in dependency order (bases/used classes first).
+    4. Remaining functions:
+       - With an entry point: the entry point first, then a pre-order (caller before
+         callee) walk of the functions it calls, so the reader meets the top-level
+         function first. Any functions unreachable from the entry point follow in
+         dependency order (callees first).
+       - Without an entry point: dependency order (callees before callers).
 
-    Note: Entry point comes BEFORE functions it calls, because Python defines all
-    functions at module load time. However, constants that depend on functions must
-    come after those functions (runtime requirement).
+    Ties are broken alphabetically. Classes count as ``function_names`` when they
+    appear as dependencies.
 
     Args:
-        unit_names: All unit names to order.
-        edges: Dict mapping unit name to set of units it depends on.
-        entry_name: Optional entry point name (main or __init__).
-        function_names: Set of function/class names (entry point prioritisation applies
-            only among these).
+        unit_names: All unit names, in original source order.
+        edges: Dict mapping unit name to the set of unit names it depends on.
+        entry_name: Optional entry point name (``main`` or ``__init__``).
+        function_names: Names that are functions or classes.
+        class_names: Names that are classes (a subset of ``function_names``).
 
     Returns:
         Ordered list of unit names.
     """
-    names = list(unit_names)
-    names.sort()  # Start alphabetically for determinism
+    original = list(unit_names)
+    function_names = function_names or set()
+    class_names = class_names or set()
 
-    if not names:
+    if not original:
         return []
 
-    # Separate constants and functions
-    constants = [n for n in names if n not in function_names]
-    funcs = [n for n in names if n in function_names]
+    constants = [n for n in original if n not in function_names]
+    classes = [n for n in original if n in class_names]
+    funcs = [n for n in original if n in function_names and n not in class_names]
 
-    # Classify constants: those that depend on functions vs those that don't
-    independent_constants = []
-    dependent_constants = []
-    for c in constants:
-        deps_on_funcs = edges.get(c, set()) & function_names
-        if deps_on_funcs:
-            dependent_constants.append(c)
-        else:
-            independent_constants.append(c)
+    def func_deps(name: str) -> set[str]:
+        """Return the dependencies of ``name`` that are functions or classes."""
+        return edges.get(name, set()) & function_names
 
-    # DFS-based topological sort for independent constants
-    visited: set[str] = set()
-    path: set[str] = set()
-    indep_const_result: list[str] = []
+    independent_constants = [c for c in constants if not func_deps(c)]
+    dependent_constants = [c for c in constants if func_deps(c)]
 
-    def visit_indep(name: str) -> None:
-        if name in visited:
+    result: list[str] = []
+    emitted: set[str] = set()
+
+    def emit(name: str) -> None:
+        if name not in emitted:
+            emitted.add(name)
+            result.append(name)
+
+    def emit_postorder(name: str, path: set[str]) -> None:
+        """Emit ``name`` after its function/class dependencies (callees first)."""
+        if name in emitted or name in path:
             return
-        if name in path:
-            return  # Cycle
         path.add(name)
-        for dep in sorted(edges.get(name, set()) & set(independent_constants)):
-            visit_indep(dep)
-        path.remove(name)
-        visited.add(name)
-        indep_const_result.append(name)
+        for dep in sorted(func_deps(name)):
+            emit_postorder(dep, path)
+        path.discard(name)
+        emit(name)
 
-    for name in independent_constants:
-        if name not in visited:
-            visit_indep(name)
-
-    # Sort functions: entry point first, then others in dependency order
-    if entry_name and entry_name in funcs:
-        other_funcs = [f for f in funcs if f != entry_name]
-        
-        visited_func: set[str] = set()
-        path_func: set[str] = set()
-        func_result: list[str] = []
-
-        def visit_func(name: str) -> None:
-            if name in visited_func:
-                return
-            if name in path_func:
-                return  # Cycle
-            path_func.add(name)
-            for dep in sorted(edges.get(name, set()) & function_names):
-                visit_func(dep)
-            path_func.remove(name)
-            visited_func.add(name)
-            func_result.append(name)
-
-        for name in other_funcs:
-            if name not in visited_func:
-                visit_func(name)
-        
-        # Entry first among functions
-        sorted_funcs = [entry_name] + func_result
-    else:
-        # No entry point - sort all functions by dependency
-        visited_func: set[str] = set()
-        path_func: set[str] = set()
-        func_result: list[str] = []
-
-        def visit_func(name: str) -> None:
-            if name in visited_func:
-                return
-            if name in path_func:
-                return  # Cycle
-            path_func.add(name)
-            for dep in sorted(edges.get(name, set()) & function_names):
-                visit_func(dep)
-            path_func.remove(name)
-            visited_func.add(name)
-            func_result.append(name)
-
-        for name in funcs:
-            if name not in visited_func:
-                visit_func(name)
-        
-        sorted_funcs = func_result
-
-    # DFS-based topological sort for dependent constants
-    visited_dep: set[str] = set()
-    path_dep: set[str] = set()
-    dep_const_result: list[str] = []
-
-    def visit_dep(name: str) -> None:
-        if name in visited_dep:
+    def emit_preorder(name: str, path: set[str]) -> None:
+        """Emit ``name`` before its function/class dependencies (caller first)."""
+        if name in emitted or name in path:
             return
-        if name in path_dep:
-            return  # Cycle
-        path_dep.add(name)
-        for dep in sorted(edges.get(name, set()) & set(dependent_constants)):
-            visit_dep(dep)
-        path_dep.remove(name)
-        visited_dep.add(name)
-        dep_const_result.append(name)
+        path.add(name)
+        emit(name)
+        for dep in sorted(func_deps(name)):
+            emit_preorder(dep, path)
+        path.discard(name)
 
-    for name in dependent_constants:
-        if name not in visited_dep:
-            visit_dep(name)
+    # 1. Independent constants, in original order.
+    for const in independent_constants:
+        emit(const)
 
-    # Combine: independent constants, functions, dependent constants
-    return indep_const_result + sorted_funcs + dep_const_result
+    # 2. Dependent constants, each preceded by its callees, in original order.
+    for const in dependent_constants:
+        for dep in sorted(func_deps(const)):
+            emit_postorder(dep, set())
+        emit(const)
+
+    # 3. Remaining classes, in dependency order (bases/used classes first).
+    for cls in sorted(classes):
+        emit_postorder(cls, set())
+
+    # 4. Remaining functions.
+    if entry_name and entry_name in funcs:
+        emit_preorder(entry_name, set())
+    for func in sorted(funcs):
+        emit_postorder(func, set())
+
+    return result

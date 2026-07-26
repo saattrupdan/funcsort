@@ -8,7 +8,9 @@ import libcst.matchers as m
 from .models import SortableUnit, _Statement
 
 
-def parse_module(source: str) -> tuple[list[SortableUnit], list[_Statement]]:
+def parse_module(
+    source: str,
+) -> tuple[list[SortableUnit], list[_Statement], list[_Statement]]:
     """Parse a Python module into sortable units and fixed nodes.
 
     Sortable units include functions, classes, and constants (assignments).
@@ -17,12 +19,15 @@ def parse_module(source: str) -> tuple[list[SortableUnit], list[_Statement]]:
         source: Python source code.
 
     Returns:
-        Tuple of (sortable units, fixed nodes in original order).
+        Tuple of (sortable units, fixed nodes in original order, all top-level
+        statements in original order). The third value lets the rewriter tell
+        whether two statements were adjacent in the source.
     """
     module = cst.parse_module(source)
 
     units: list[SortableUnit] = []
     fixed_nodes: list[_Statement] = []
+    original_body: list[_Statement] = list(module.body)
 
     for statement in module.body:
         if m.matches(statement, m.FunctionDef()):
@@ -103,7 +108,7 @@ def parse_module(source: str) -> tuple[list[SortableUnit], list[_Statement]]:
         else:
             fixed_nodes.append(statement)
 
-    return units, fixed_nodes
+    return units, fixed_nodes, original_body
 
 
 def parse_class_body(class_def: cst.ClassDef) -> tuple[list[SortableUnit], list[t.Any]]:

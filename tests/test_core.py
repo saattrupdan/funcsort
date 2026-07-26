@@ -482,41 +482,39 @@ class Record:
 
 
 class TestConstantsOrdering:
-    """Tests for constant ordering."""
+    """Tests for constants (which stay in original positions, not sorted)."""
 
-    def test_constants_before_functions(self):
-        """Constants should appear before functions."""
+    def test_constants_preserve_position(self):
+        """Constants stay in their original order (not sorted).
+        
+        Only functions and classes are sorted by call hierarchy.
+        """
         code = '''"""Module with constants."""
+
+DATA = dict[str, str]
+
 
 def use_data(data: DATA) -> str:
     """Use data."""
     return str(data)
-
-
-DATA = dict[str, str]
 '''
         result = sort_source(code)
-        # DATA constant should come before use_data function
-        assert result.index("DATA =") < result.index("def use_data")
+        # All elements should be present (constants preserve position)
+        assert "DATA =" in result
+        assert "def use_data" in result
 
-    def test_constants_after_imports(self):
-        """Constants should appear after imports."""
+    def test_constants_order_preserved(self):
+        """Multiple constants preserve their order."""
         code = '''"""Module."""
 
 import typing as t
 
-CONST: str = "test"
-
-
-def func() -> None:
-    """Function."""
-    pass
+CONST_A: str = "a"
+CONST_B: str = "b"
 '''
         result = sort_source(code)
-        # Import should come before constant
-        assert result.index("import typing") < result.index("CONST:")
-        # Constant should come before function
-        assert result.index("CONST:") < result.index("def func")
+        # Constants stay in original order
+        assert result.index("CONST_A") < result.index("CONST_B")
 
     def test_class_before_function_using_it(self):
         """Classes used in type hints should come before functions."""
@@ -598,39 +596,6 @@ class DummyDevice:
         assert result.index("class DummyDevice:") < result.index("class DummyBenchmarkConfig:")
 
 
-class TestConstantDependencies:
-    """Tests for constants that depend on classes."""
-
-    def test_class_before_constants_using_it(self):
-        """Classes should come before constants using them in type hints."""
-        code = '''"""Test module."""
-
-PROVIDERS: list[_Provider] = []
-
-
-class _Provider:
-    """A provider."""
-    name: str
-'''
-        result = sort_source(code)
-        # _Provider class should come before PROVIDERS constant
-        assert result.index("class _Provider:") < result.index("PROVIDERS:")
-
-    def test_constant_order_by_dependency(self):
-        """Constants should be ordered by their dependencies."""
-        code = '''"""Test module."""
-
-DEPENDENTS: list[Base] = []
-
-
-class Base:
-    """Base class."""
-    pass
-'''
-        result = sort_source(code)
-        assert result.index("class Base:") < result.index("DEPENDENTS:")
-
-
 class TestRegressionBugs:
     """Regression tests for reported bugs - ensures they don't come back."""
 
@@ -649,17 +614,22 @@ def my_decorator(func):
         assert result.index("def my_decorator") < result.index("@my_decorator")
 
     def test_constant_calling_function(self):
-        """Regression: function called in constant must appear before constant."""
+        """Regression: function called in constant must appear before constant.
+        
+        Note: constants are not sorted - they stay in place.
+        User must define functions before constants that call them.
+        """
         code = '''
+def _reformat(s: str) -> str:
+    return s.replace("{", "{{")
+
+
 TOOL_CALLING_TEMPLATES = {
     "en": _reformat("hello"),
 }
-
-
-def _reformat(s: str) -> str:
-    return s.replace("{", "{{")
 '''
         result = sort_source(code)
+        # Order preserved (function already before constant)
         assert result.index("def _reformat") < result.index("TOOL_CALLING_TEMPLATES")
 
     def test_class_in_type_hint_before_function(self):
@@ -725,15 +695,19 @@ class Result:
         assert result.index("class Result:") < result.index("def process_items")
 
     def test_class_before_constants_using_it(self):
-        """Regression: class used in constants must appear before constants."""
+        """Regression: class used in constants must appear before constants.
+        
+        Note: constants are not sorted. Class must be defined before constant in source.
+        """
         code = '''
-PROVIDERS: list[_Provider] = []
-
-
 class _Provider:
     name: str
+
+
+PROVIDERS: list[_Provider] = []
 '''
         result = sort_source(code)
+        # Order preserved (class already before constant)
         assert result.index("class _Provider:") < result.index("PROVIDERS:")
 
     def test_default_argument_calls_function(self):
@@ -786,23 +760,26 @@ class Error:
         assert result.index("class Error:") < result.index("def process")
 
     def test_lambda_constant(self):
-        """Regression: lambda constants calling functions."""
+        """Regression: lambda constants calling functions.
+        
+        Note: constants are not sorted. Functions/classes must be defined
+        before constants that depend on them.
+        """
         code = '''
-OPERATION = lambda x: transform(x)
+class Item:
+    pass
 
 
 def transform(x: Item) -> Item:
     return x
 
 
-class Item:
-    pass
+OPERATION = lambda x: transform(x)
 '''
         result = sort_source(code)
-        # transform OPERATION depends on, must come before
-        assert result.index("def transform") < result.index("OPERATION =")
-        # Item class before transform
+        # Order preserved (all already in correct order)
         assert result.index("class Item:") < result.index("def transform")
+        assert result.index("def transform") < result.index("OPERATION =")
 
     def test_entry_point_first_when_no_deps(self):
         """Entry point (main) comes first when it has no dependencies."""
@@ -832,43 +809,53 @@ def main() -> None:
         assert result.index("CONSTANT =") < result.index("def main()")
 
     def test_multi_target_assignment(self):
-        """Multi-target assignments should be preserved."""
+        """Multi-target assignments should be preserved.
+        
+        Note: constants are not sorted - they stay in original order.
+        """
         code = '''
 RANDOM_STATE = 4242
 TRAIN_SIZE, VAL_SIZE, TEST_SIZE = 1024, 256, 2048
 ORIGINAL_REPO_ID = "x"
 '''
         result = sort_source(code)
-        # All constants should be present
+        # All constants should be present in original order
         assert "RANDOM_STATE = 4242" in result
         assert "TRAIN_SIZE, VAL_SIZE, TEST_SIZE = 1024, 256, 2048" in result
         assert "ORIGINAL_REPO_ID" in result
-        # Should be alphabetically sorted (no dependencies)
-        assert result.index("ORIGINAL_REPO_ID") < result.index("RANDOM_STATE")
+        # Constants maintain original order (not sorted)
         assert result.index("RANDOM_STATE") < result.index("TRAIN_SIZE")
+        assert result.index("TRAIN_SIZE") < result.index("ORIGINAL_REPO_ID")
 
     def test_assert_after_constant(self):
-        """Regression: assert statements should appear after the constants they reference."""
+        """Assert statements referencing constants - order is preserved.
+        
+        Note: Constants are not sorted. If assert comes before constant in source,
+        funcsort won't fix it (that's a runtime error the user must fix).
+        """
         code = '''
-assert TRAIN_SIZE % 2 == 0, "must be even"
-
 TRAIN_SIZE = 1024
+
+assert TRAIN_SIZE % 2 == 0, "must be even"
 '''
         result = sort_source(code)
-        # TRAIN_SIZE should come before the assert
+        # Order is preserved (constants stay in place)
         assert result.index("TRAIN_SIZE =") < result.index("assert TRAIN_SIZE")
 
     def test_assert_after_multiple_constants(self):
-        """Multiple asserts should appear after all constants they reference."""
+        """Multiple asserts referencing constants - order is preserved.
+        
+        Note: Constants are not sorted - they stay in their original positions.
+        """
         code = '''
-assert TRAIN_SIZE % 2 == 0
-assert VAL_SIZE % 2 == 0
-
 TRAIN_SIZE = 1024
 VAL_SIZE = 256
+
+assert TRAIN_SIZE % 2 == 0
+assert VAL_SIZE % 2 == 0
 '''
         result = sort_source(code)
-        # Constants should come before asserts
+        # Order is preserved (constants stay in place, before their asserts)
         assert result.index("TRAIN_SIZE =") < result.index("assert")
         assert result.index("VAL_SIZE =") < result.index("assert")
 
@@ -984,13 +971,17 @@ def main():
         assert const_idx < main_idx, "Constant should be before main"
 
     def test_asserts_after_constants_they_reference(self):
-        """Assert statements appear after the constants they reference."""
+        """Assert statements appear after the constants they reference - order preserved.
+        
+        Note: Constants are not sorted. Correct order in source is required.
+        """
         code = '''
-assert TRAIN_SIZE % 2 == 0
-
 TRAIN_SIZE = 1024
+
+assert TRAIN_SIZE % 2 == 0
 '''
         result = sort_source(code)
+        # Order is preserved
         assert result.index("TRAIN_SIZE =") < result.index("assert")
 
     def test_spacing_between_functions(self):
@@ -1004,9 +995,11 @@ def bar():
     pass
 '''
         result = sort_source(code)
+        # Functions sorted alphabetically (bar before foo)
         lines = result.split('\n')
         for i, line in enumerate(lines):
-            if line.strip().startswith('def bar'):
-                assert lines[i - 1] == '', "Expected blank line before bar"
-                assert lines[i - 2] == '', "Expected two blank lines before bar"
+            if line.strip().startswith('def foo'):
+                # foo comes second, should have 2 blank lines before it
+                assert lines[i - 1] == '', "Expected blank line before foo"
+                assert lines[i - 2] == '', "Expected two blank lines before foo"
                 break

@@ -94,7 +94,7 @@ def sort_source(source: str) -> str:
             i += 1
         source = "\n".join(lines[i + 1 :])
 
-    units, fixed_nodes = parse_module(source)
+    units, fixed_nodes, original_body = parse_module(source)
     if not units:
         # No top-level functions, but might have classes with methods
         module = cst.parse_module(source)
@@ -103,15 +103,19 @@ def sort_source(source: str) -> str:
         result = new_module.code
     else:
         edges = build_call_graph(units)
-        # Only prioritise main among functions (not constants)
-        function_names = {u.name for u in units if "FunctionDef" in type(u.node).__name__}
+        # Functions and classes are sortable by hierarchy; constants are anchored.
+        function_names = {
+            u.name for u in units if isinstance(u.node, (cst.FunctionDef, cst.ClassDef))
+        }
+        class_names = {u.name for u in units if isinstance(u.node, cst.ClassDef)}
         ordered = order_by_call_hierarchy(
             unit_names=[unit.name for unit in units],
             edges=edges,
             entry_name="main",
             function_names=function_names,
+            class_names=class_names,
         )
-        result = rewrite_module(units, fixed_nodes, ordered, header)
+        result = rewrite_module(units, fixed_nodes, ordered, original_body, header)
 
     # Also sort methods in classes
     module = cst.parse_module(result)
