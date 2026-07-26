@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Comments on constant definitions now preserved during sorting
+- Proper PEP 8 spacing: 1 blank line after imports, 2 blank lines between sections
+- Multi-target assignments (`a, b, c = ...`) parsed as single sortable unit
 - Call graph extraction now properly traverses function bodies (was blocking on first
   `FunctionDef`)
 - Decorator dependencies now correctly ordered (decorator definitions before usages)
