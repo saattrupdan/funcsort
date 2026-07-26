@@ -8,7 +8,7 @@ class TestModuleLevelFunctions:
     """Tests for module-level function sorting."""
 
     def test_caller_with_entry_point(self):
-        """Entry point (main) comes first, other functions by dependencies."""
+        """Entry point (main) comes first only if it has no dependencies."""
         code = '''
 def main():
     return helper()
@@ -18,8 +18,8 @@ def helper():
     return 42
 '''
         result = sort_source(code)
-        # main is entry point, comes first
-        assert result.index("def main():") < result.index("def helper():")
+        # main depends on helper, so helper comes first
+        assert result.index("def helper():") < result.index("def main():")
 
     def test_callee_before_caller_no_entry(self):
         """Without main, callee comes before caller."""
@@ -329,7 +329,7 @@ class TestNoOp:
     """Tests for cases that should not change."""
 
     def test_already_sorted_with_entry(self):
-        """Already sorted code with main should stay sorted."""
+        """Already sorted code - entry point comes first only without deps."""
         code = '''
 def main():
     return helper()
@@ -339,8 +339,8 @@ def helper():
     return 42
 '''
         result = sort_source(code)
-        assert result.index("def main():") == 0  # Entry point always first
-        assert result.index("def helper():") > 0
+        # main depends on helper, so helper comes first
+        assert result.index("def helper():") < result.index("def main():")
 
     def test_decorators_preserved_when_sorted(self):
         """Decorators should stay on their functions when already sorted."""
@@ -803,3 +803,17 @@ class Item:
         assert result.index("def transform") < result.index("OPERATION =")
         # Item class before transform
         assert result.index("class Item:") < result.index("def transform")
+
+    def test_entry_point_first_when_no_deps(self):
+        """Entry point (main) comes first when it has no dependencies."""
+        code = '''
+def helper():
+    return 42
+
+
+def main():
+    return 42
+'''
+        result = sort_source(code)
+        # main has no dependencies, should come first as entry point
+        assert result.index("def main():") < result.index("def helper():")

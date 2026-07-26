@@ -7,10 +7,12 @@ from .models import SortableUnit
 
 
 class _CallCollector(cst.CSTVisitor):
-    """Collect all function/method names called within a function body.
+    """Collect all function/method names and name references within a function body.
 
-    Ignores nested function definitions and method calls on objects (only
-    collects bare names that could refer to sibling functions).
+    Ignores nested function definitions. Collects:
+    - Bare function calls (foo())
+    - Method calls (self.foo())
+    - Bare name references that could refer to siblings (e.g., CONSTANT)
     """
 
     def __init__(self) -> None:
@@ -38,6 +40,12 @@ class _CallCollector(cst.CSTVisitor):
                 # For self.method(), extract just 'method'
                 if isinstance(func.attr, cst.Name):
                     self.calls.add(func.attr.value)
+        elif m.matches(original_node, m.Name()) and isinstance(original_node, cst.Name):
+            # Also collect bare name references (e.g., CONSTANT in print(CONSTANT))
+            # Skip builtins and common locals
+            name = original_node.value
+            if name not in ("None", "True", "False", "self", "cls"):
+                self.calls.add(name)
 
 
 def build_call_graph(units: list[SortableUnit]) -> dict[str, set[str]]:
@@ -79,8 +87,8 @@ def build_call_graph(units: list[SortableUnit]) -> dict[str, set[str]]:
             # Constants with assignments depend on any calls in the value
             value_refs = _extract_names_from_assign_value(unit.node.value)
             deps = value_refs
-        # Filter to only sibling units
-        graph[unit.name] = deps & unit_names
+        # Filter to only sibling units (exclude self-references)
+        graph[unit.name] = (deps & unit_names) - {unit.name}
 
     return graph
 

@@ -8,16 +8,17 @@ def order_by_call_hierarchy(
 ) -> list[str]:
     """Order function names by call hierarchy.
 
-    Entry point (if provided) comes first. Remaining functions are ordered
-    so callers appear before callees. Ties and cycles are broken alphabetically.
+    Entry points (if provided) come first among units with no dependencies.
+    Remaining units are ordered so dependencies come before dependents.
+    Ties and cycles are broken alphabetically.
 
     Args:
-        unit_names: All function names to order.
-        edges: Dict mapping function name to set of functions it calls.
+        unit_names: All unit names to order.
+        edges: Dict mapping unit name to set of units it depends on.
         entry_name: Optional entry point name (main or __init__).
 
     Returns:
-        Ordered list of function names.
+        Ordered list of unit names.
     """
     names = list(unit_names)
     names.sort()  # Start alphabetically for determinism
@@ -55,9 +56,13 @@ def order_by_call_hierarchy(
         if name not in visited:
             visit(name)
 
-    # Move entry point to front if present
+    # Move entry point to front only if it has no dependencies
+    # (entry points shouldn't come before things they depend on)
     if entry and entry in result:
-        result.remove(entry)
-        result.insert(0, entry)
+        entry_deps = edges.get(entry, set()) & set(names)
+        # Only move to front if entry has no dependencies
+        if not entry_deps:
+            result.remove(entry)
+            result.insert(0, entry)
 
     return result
