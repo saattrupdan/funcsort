@@ -57,7 +57,17 @@ Decorators are preserved when functions are moved.
 
 ## Pre-commit Hook
 
-Funcsort defines a pre-commit hook in `.pre-commit-hooks.yaml`. To use it locally:
+Add to your `.pre-commit-config.yaml`:
+
+```yaml
+- repo: https://github.com/saattrupdan/funcsort
+  rev: v0.0.0  # Use the latest tag
+  hooks:
+    - id: funcsort
+      args: [--fix]  # Automatically fix sorting
+```
+
+Or use locally with `uv`:
 
 ```yaml
 - repo: local
