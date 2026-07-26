@@ -49,6 +49,10 @@ def rewrite_module(
     new_body.extend(docstring)
     new_body.extend(imports)
 
+    # Add blank line after imports if there are sorted units
+    if ordered_names:
+        new_body.append(cst.EmptyLine())
+
     # Add all sorted units in dependency order
     # Wrap assignments in SimpleStatementLine
     for name in ordered_names:
