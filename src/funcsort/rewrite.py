@@ -63,7 +63,10 @@ def rewrite_class_body(
 
 
 def rewrite_module(
-    units: list[SortableUnit], fixed_nodes: list[_Statement], ordered_names: list[str]
+    units: list[SortableUnit],
+    fixed_nodes: list[_Statement],
+    ordered_names: list[str],
+    header: str = "",
 ) -> str:
     """Rewrite a module with functions in the specified order.
 
@@ -71,6 +74,7 @@ def rewrite_module(
         units: All sortable units.
         fixed_nodes: Non-sortable nodes to keep in place.
         ordered_names: Function names in desired order.
+        header: Module header to preserve (e.g., uv script metadata).
 
     Returns:
         Reformatted source code.
@@ -101,4 +105,7 @@ def rewrite_module(
     new_body.extend(main_blocks)
 
     module = cst.Module(body=new_body)
-    return module.code
+    code = module.code
+    if header:
+        code = header + "\n\n" + code
+    return code

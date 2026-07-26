@@ -29,6 +29,24 @@ def bump_patch() -> None:
     set_new_version(0, 0, patch + 1)
 
 
+def get_current_version() -> tuple[int, int, int]:
+    """Fetch the current version of the package.
+
+    Returns:
+        A tuple of (major, minor, patch).
+
+    Raises:
+        RuntimeError:
+            If no version can be found in the `pyproject.toml` file.
+    """
+    pyproject_path = Path("pyproject.toml")
+    pyproject = pyproject_path.read_text(encoding="utf-8")
+    match = re.search(r'version = "(\d+)\.(\d+)\.(\d+)"', pyproject)
+    if not match:
+        raise RuntimeError("Could not find version in pyproject.toml.")
+    return int(match.group(1)), int(match.group(2)), int(match.group(3))
+
+
 def set_new_version(major: int, minor: int, patch: int) -> None:
     """Sets a new version.
 
@@ -82,24 +100,6 @@ def set_new_version(major: int, minor: int, patch: int) -> None:
     subprocess.run(["git", "push", "--tags"], check=True)
 
     print(f"✓ Released v{version}")
-
-
-def get_current_version() -> tuple[int, int, int]:
-    """Fetch the current version of the package.
-
-    Returns:
-        A tuple of (major, minor, patch).
-
-    Raises:
-        RuntimeError:
-            If no version can be found in the `pyproject.toml` file.
-    """
-    pyproject_path = Path("pyproject.toml")
-    pyproject = pyproject_path.read_text(encoding="utf-8")
-    match = re.search(r'version = "(\d+)\.(\d+)\.(\d+)"', pyproject)
-    if not match:
-        raise RuntimeError("Could not find version in pyproject.toml.")
-    return int(match.group(1)), int(match.group(2)), int(match.group(3))
 
 
 if __name__ == "__main__":

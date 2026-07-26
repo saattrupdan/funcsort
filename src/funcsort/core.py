@@ -109,20 +109,36 @@ def sort_source(source: str) -> str:
     Returns:
         Source with functions/methods sorted by call hierarchy.
     """
+    # Extract module header (e.g., uv script metadata: # /// script ... # ///)
+    header = ""
+    lines = source.splitlines()
+    if lines and lines[0].startswith("# ///"):
+        header_lines = []
+        i = 0
+        while i < len(lines):
+            header_lines.append(lines[i])
+            if lines[i].strip() == "# ///":
+                break
+            i += 1
+        header = "\n".join(header_lines)
+        # Skip header and any blank lines after it
+        while i + 1 < len(lines) and lines[i + 1] == "":
+            i += 1
+        source = "\n".join(lines[i + 1 :])
+
     units, fixed_nodes = parse_module(source)
     if not units:
         # No top-level functions, but might have classes with methods
         module = cst.parse_module(source)
         transformer = _ClassTransformer()
         new_module = module.visit(transformer)
-        return new_module.code
-
-    edges = build_call_graph(units)
-    ordered = order_by_call_hierarchy(
-        unit_names=[unit.name for unit in units], edges=edges, entry_name="main"
-    )
-
-    result = rewrite_module(units, fixed_nodes, ordered)
+        result = new_module.code
+    else:
+        edges = build_call_graph(units)
+        ordered = order_by_call_hierarchy(
+            unit_names=[unit.name for unit in units], edges=edges, entry_name="main"
+        )
+        result = rewrite_module(units, fixed_nodes, ordered, header)
 
     # Also sort methods in classes
     module = cst.parse_module(result)
