@@ -51,7 +51,7 @@ def rewrite_module(
     new_body.extend(other_fixed)  # Preserves standalone comments
 
     # Add sorted units in dependency order, with proper spacing
-    # PEP 8: 2 blank lines between top-level functions/classes, constants grouped together
+    # PEP 8: 2 blank lines before functions/classes, 1 blank line before constants
     # Asserts (names starting with _assert) don't get blank lines before them (like inline statements)
     started = False
     prev_is_constant = False
@@ -62,8 +62,12 @@ def rewrite_module(
 
         # Determine spacing before this unit
         if not started:
-            # First unit: 1 blank line after imports
-            new_body.append(cst.EmptyLine())
+            # First unit: blank lines depend on type
+            if is_constant or is_assert:
+                new_body.append(cst.EmptyLine())  # 1 blank line for constants/asserts
+            else:
+                new_body.append(cst.EmptyLine())  # First blank line
+                new_body.append(cst.EmptyLine())  # Second blank line for functions
             started = True
             prev_is_constant = is_constant
             # No continue - we still need to add the unit

@@ -885,15 +885,17 @@ def bar():
         result = sort_source(code)
         # Check that functions are separated by two blank lines
         lines = result.split('\n')
-        # Find the line with "def bar" - should have two blank lines before it
+        # Find the second function (alphabetically bar comes first, then foo)
+        # Each function should have 2 blank lines before it
+        func_count = 0
         for i, line in enumerate(lines):
-            if line.strip().startswith('def bar'):
-                # Previous two lines should be blank
-                assert lines[i - 1] == '', f"Expected blank line before bar, got: {repr(lines[i - 1])}"
-                assert lines[i - 2] == '', f"Expected two blank lines before bar, got: {repr(lines[i - 2])}"
-                # The line before the blanks should have content (foo's body)
-                assert lines[i - 3].strip(), f"Expected content before blanks, got: {repr(lines[i - 3])}"
-                break
+            if line.strip().startswith('def '):
+                func_count += 1
+                if func_count > 1:
+                    # Second function onwards should have 2 blank lines before
+                    assert lines[i - 1] == '', f"Expected blank line before function at line {i}, got: {repr(lines[i - 1])}"
+                    assert lines[i - 2] == '', f"Expected two blank lines before function at line {i}, got: {repr(lines[i - 2])}"
+                    break
 
     def test_constant_function_spacing(self):
         """Constants and functions should have proper spacing (1 before constant, 2 before function)."""
