@@ -9,7 +9,7 @@ from .models import SortableUnit, _Statement
 
 
 def parse_module(source: str) -> tuple[list[SortableUnit], list[_Statement]]:
-    """Parse a Python module into sortable functions and fixed nodes.
+    """Parse a Python module into sortable functions/classes and fixed nodes.
 
     Args:
         source: Python source code.
@@ -29,6 +29,12 @@ def parse_module(source: str) -> tuple[list[SortableUnit], list[_Statement]]:
             is_entry = func_def.name.value == "main"
             units.append(
                 SortableUnit(name=func_def.name.value, node=func_def, is_entry=is_entry)
+            )
+        elif m.matches(statement, m.ClassDef()):
+            class_def = statement
+            assert isinstance(class_def, cst.ClassDef)
+            units.append(
+                SortableUnit(name=class_def.name.value, node=class_def, is_entry=False)
             )
         else:
             fixed_nodes.append(statement)

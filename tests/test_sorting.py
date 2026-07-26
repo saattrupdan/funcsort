@@ -411,3 +411,65 @@ def main():
 '''
         result = sort_source(code)
         assert result.index("import os") < result.index("def main")
+
+
+class TestClassTypeHints:
+    """Tests for class references in type hints."""
+
+    def test_class_before_function_using_it(self):
+        """Classes should come before functions using them in type hints."""
+        code = '''"""Module with class type hints."""
+
+
+def process_user(user: User) -> str:
+    """Process a user."""
+    return user.name
+
+
+class User:
+    """A user class."""
+    name: str
+
+    def __init__(self, name: str):
+        self.name = name
+'''
+        result = sort_source(code)
+        # User class should come before process_user
+        assert result.index("class User:") < result.index("def process_user")
+
+    def test_generic_type_annotations(self):
+        """Generic types like list[T] should be handled."""
+        code = '''
+def process_items(items: list[Item]) -> list[Result]:
+    """Process a list of items."""
+    return []
+
+
+class Item:
+    """An item."""
+    pass
+
+
+class Result:
+    """A result."""
+    pass
+'''
+        result = sort_source(code)
+        # Item and Result should come before process_items
+        assert result.index("class Item:") < result.index("def process_items")
+        assert result.index("class Result:") < result.index("def process_items")
+
+    def test_nested_generic_annotations(self):
+        """Nested generics like dict[str, list[T]] should be handled."""
+        code = '''
+def get_data() -> dict[str, list[Record]]:
+    """Get data."""
+    return {}
+
+
+class Record:
+    """A record."""
+    pass
+'''
+        result = sort_source(code)
+        assert result.index("class Record:") < result.index("def get_data")

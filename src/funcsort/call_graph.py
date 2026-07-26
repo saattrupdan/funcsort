@@ -41,25 +41,33 @@ class _CallCollector(cst.CSTVisitor):
 
 
 def build_call_graph(units: list[SortableUnit]) -> dict[str, set[str]]:
-    """Build a call graph for a list of sortable units.
+    """Build a dependency graph for a list of sortable units.
 
-    Creates edges from caller to callee for same-scope function calls and
-    decorator usages.
+    Creates edges from a unit to its dependencies (function calls, decorator usages,
+    and type hint references).
 
     Args:
         units: List of sortable units in scope.
 
     Returns:
-        Dict mapping function name to set of functions it depends on.
+        Dict mapping unit name to set of units it depends on.
     """
     unit_names = {unit.name for unit in units}
     graph: dict[str, set[str]] = {}
 
     for unit in units:
-        calls = extract_calls(unit.node)
-        decorators = extract_decorators(unit.node)
-        # Filter to only sibling functions
-        graph[unit.name] = (calls | decorators) & unit_names
+        deps: set[str] = set()
+        if isinstance(unit.node, cst.FunctionDef):
+            calls = extract_calls(unit.node)
+            decorators = extract_decorators(unit.node)
+            type_refs = extract_type_annotations(unit.node)
+            deps = calls | decorators | type_refs
+        elif isinstance(unit.node, cst.ClassDef):
+            # Classes can depend on base classes via type annotations
+            type_refs = extract_class_bases(unit.node)
+            deps = type_refs
+        # Filter to only sibling units
+        graph[unit.name] = deps & unit_names
 
     return graph
 
@@ -97,3 +105,70 @@ def extract_calls(func_node: cst.FunctionDef) -> set[str]:
     collector = _CallCollector()
     func_node.visit(collector)
     return collector.calls
+
+
+def extract_type_annotations(func_node: cst.FunctionDef) -> set[str]:
+    """Extract class/type references from function type annotations.
+
+    Extracts bare Name nodes from parameter annotations and return type.
+
+    Args:
+        func_node: The function definition node.
+
+    Returns:
+        Set of type/class names referenced in annotations.
+    """
+    refs: set[str] = set()
+
+    # Extract from parameters (annotation.annotation is the actual type)
+    for param in func_node.params.params:
+        if param.annotation:
+            refs.update(_extract_names_from_annotation(param.annotation.annotation))
+
+    # Extract from return type
+    if func_node.returns:
+        refs.update(_extract_names_from_annotation(func_node.returns.annotation))
+
+    return refs
+
+
+def _extract_names_from_annotation(annotation: cst.BaseExpression) -> set[str]:
+    """Extract bare Name references from a type annotation.
+
+    Handles Name, Subscript (e.g., list[T]), and other common patterns.
+    """
+    refs: set[str] = set()
+
+    if m.matches(annotation, m.Name()):
+        assert isinstance(annotation, cst.Name)
+        refs.add(annotation.value)
+    elif m.matches(annotation, m.Subscript()):
+        assert isinstance(annotation, cst.Subscript)
+        # For list[T], dict[K, V], etc. - extract the base and args
+        if m.matches(annotation.value, m.Name()):
+            assert isinstance(annotation.value, cst.Name)
+            refs.add(annotation.value.value)
+        for item in annotation.slice:
+            if isinstance(item.slice, cst.Name):
+                refs.add(item.slice.value)
+            elif m.matches(item.slice, m.Subscript()):
+                refs.update(_extract_names_from_annotation(item.slice))
+
+    return refs
+
+
+def extract_class_bases(class_node: cst.ClassDef) -> set[str]:
+    """Extract base class references from a class definition.
+
+    Args:
+        class_node: The class definition node.
+
+    Returns:
+        Set of base class names.
+    """
+    refs: set[str] = set()
+    for base in class_node.bases:
+        if m.matches(base.value, m.Name()):
+            assert isinstance(base.value, cst.Name)
+            refs.add(base.value.value)
+    return refs
