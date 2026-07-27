@@ -103,14 +103,14 @@ def bump_major() -> None:
 
 def bump_minor() -> None:
     """Add one to the minor version."""
-    _, minor, _ = get_current_version()
-    set_new_version(0, minor + 1, 0)
+    major, minor, _ = get_current_version()
+    set_new_version(major, minor + 1, 0)
 
 
 def bump_patch() -> None:
     """Add one to the patch version."""
-    _, _, patch = get_current_version()
-    set_new_version(0, 0, patch + 1)
+    major, minor, patch = get_current_version()
+    set_new_version(major, minor, patch + 1)
 
 
 if __name__ == "__main__":
