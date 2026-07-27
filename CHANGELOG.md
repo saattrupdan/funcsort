@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.1.2] - 2026-07-27
+
+### Changed
+
+- Sorting is now ~55% faster on large modules, with byte-identical output.
+  Method reordering no longer reconstructs the entire module tree via a libcst
+  transformer - it recurses only through statement containers and rebuilds just
+  the paths that change - and name/call extraction walks node fields directly
+  instead of using libcst's per-attribute visitor callbacks.
+
 ## [v0.1.1] - 2026-07-27
 
 ### Added
