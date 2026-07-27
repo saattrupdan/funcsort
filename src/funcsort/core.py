@@ -16,6 +16,58 @@ import pathspec
 from .call_graph import call_refs, def_time_refs
 from .ordering import order_run
 from .rewrite import Definition, rebuild_run
+from .traversal import field_names
+
+# Node types that can lie on the path from a body to a nested class definition.
+# A class only ever appears as a statement, so pruning the recursion to these
+# containers skips every expression and whitespace subtree.
+_CLASS_CONTAINERS = (
+    cst.Module,
+    cst.BaseStatement,
+    cst.BaseSuite,
+    cst.Else,
+    cst.Finally,
+    cst.ExceptHandler,
+    cst.ExceptStarHandler,
+    cst.MatchCase,
+)
+
+
+def _is_ignored(file_path: Path, start_dir: Path) -> bool:
+    """Check if a file is ignored by gitignore patterns in parent directories.
+
+    Walks from the file's directory up to the filesystem root, checking each
+    directory's .gitignore file. Patterns are matched relative to where the
+    .gitignore is located.
+
+    Args:
+        file_path: File to check.
+        start_dir: Directory where search started.
+
+    Returns:
+        True if file is ignored by any .gitignore in parent directories.
+    """
+    # Use absolute paths to ensure proper parent traversal
+    file_path = file_path.resolve()
+    start_dir = start_dir.resolve()
+
+    # Walk from file's directory up to filesystem root
+    current = file_path.parent
+    while current != current.parent:
+        gitignore = current / ".gitignore"
+        if gitignore.exists():
+            patterns = gitignore.read_text(encoding="utf-8").splitlines()
+            spec = pathspec.GitIgnoreSpec.from_lines(patterns)
+            try:
+                rel_path = file_path.relative_to(current).as_posix()
+                if spec.match_file(rel_path):
+                    return True
+            except ValueError:
+                # file_path is not relative to current, skip this .gitignore
+                pass
+        current = current.parent
+
+    return False
 
 
 def _sort_run(
@@ -96,63 +148,45 @@ def _same_sequence(a: Sequence[cst.CSTNode], b: Sequence[cst.CSTNode]) -> bool:
     return len(a) == len(b) and all(x is y for x, y in zip(a, b))
 
 
-class _ClassTransformer(cst.CSTTransformer):
-    """Sort methods within each class body, leaving other statements in place."""
+def _sort_classes[NodeT: cst.CSTNode](node: NodeT) -> NodeT:
+    """Reorder methods within every class definition in ``node``'s subtree.
 
-    def leave_ClassDef(
-        self, original_node: cst.ClassDef, updated_node: cst.ClassDef
-    ) -> cst.ClassDef:
-        """Reorder methods in the class body if it is an indented block.
-
-        Returns:
-            The class with its methods sorted, or unchanged if nothing moved.
-        """
-        block = updated_node.body
-        if not isinstance(block, cst.IndentedBlock):
-            return updated_node
-
-        old_body = list(block.body)
-        new_body = _reorder(old_body, entry_name="__init__", blank_count=1)
-        if _same_sequence(old_body, new_body):
-            return updated_node
-        return updated_node.with_changes(body=block.with_changes(body=tuple(new_body)))
-
-
-def _is_ignored(file_path: Path, start_dir: Path) -> bool:
-    """Check if a file is ignored by gitignore patterns in parent directories.
-
-    Walks from the file's directory up to the filesystem root, checking each
-    directory's .gitignore file. Patterns are matched relative to where the
-    .gitignore is located.
+    Recurses through statement containers (never into expressions, where a class
+    cannot appear) and reorders the methods of each ``ClassDef`` body. Nested
+    classes are sorted before their enclosing class. Nodes are only rebuilt when
+    something below them actually changed, so unchanged subtrees are shared.
 
     Args:
-        file_path: File to check.
-        start_dir: Directory where search started.
+        node: The node to sort classes within (typically the whole module).
 
     Returns:
-        True if file is ignored by any .gitignore in parent directories.
+        ``node`` with every class body method-sorted, or ``node`` itself if
+        nothing moved.
     """
-    # Use absolute paths to ensure proper parent traversal
-    file_path = file_path.resolve()
-    start_dir = start_dir.resolve()
+    changes: dict[str, object] = {}
+    for name in field_names(node):
+        value = getattr(node, name)
+        if isinstance(value, _CLASS_CONTAINERS):
+            new_value = _sort_classes(value)
+            if new_value is not value:
+                changes[name] = new_value
+        elif type(value) is tuple:
+            new_tuple = tuple(
+                _sort_classes(item) if isinstance(item, _CLASS_CONTAINERS) else item
+                for item in value
+            )
+            if any(old is not new for old, new in zip(value, new_tuple)):
+                changes[name] = new_tuple
+    if changes:
+        node = node.with_changes(**changes)
 
-    # Walk from file's directory up to filesystem root
-    current = file_path.parent
-    while current != current.parent:
-        gitignore = current / ".gitignore"
-        if gitignore.exists():
-            patterns = gitignore.read_text(encoding="utf-8").splitlines()
-            spec = pathspec.GitIgnoreSpec.from_lines(patterns)
-            try:
-                rel_path = file_path.relative_to(current).as_posix()
-                if spec.match_file(rel_path):
-                    return True
-            except ValueError:
-                # file_path is not relative to current, skip this .gitignore
-                pass
-        current = current.parent
-
-    return False
+    if isinstance(node, cst.ClassDef) and isinstance(node.body, cst.IndentedBlock):
+        old_body = list(node.body.body)
+        new_body = _reorder(old_body, entry_name="__init__", blank_count=1)
+        if not _same_sequence(old_body, new_body):
+            block = node.body.with_changes(body=tuple(new_body))
+            node = node.with_changes(body=block)
+    return node
 
 
 def sort_source(source: str) -> str:
@@ -188,7 +222,7 @@ def sort_source(source: str) -> str:
     # Sort top-level functions/classes, then methods within each class.
     new_body = _reorder(list(module.body), entry_name="main", blank_count=2)
     module = module.with_changes(body=tuple(new_body))
-    module = module.visit(_ClassTransformer())
+    module = _sort_classes(module)
 
     code = module.code
     if header:

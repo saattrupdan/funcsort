@@ -12,6 +12,8 @@ Two kinds of reference matter for safe sorting:
 
 import libcst as cst
 
+from .traversal import walk
+
 
 def collect_names(node: cst.CSTNode | None) -> set[str]:
     """Collect every ``Name`` value appearing anywhere in a node.
@@ -26,14 +28,7 @@ def collect_names(node: cst.CSTNode | None) -> set[str]:
     if node is None:
         return set()
 
-    names: set[str] = set()
-
-    class _Visitor(cst.CSTVisitor):
-        def visit_Name(self, node: cst.Name) -> None:
-            names.add(node.value)
-
-    node.visit(_Visitor())
-    return names
+    return {n.value for n in walk(node) if isinstance(n, cst.Name)}
 
 
 def _signature_names(func: cst.FunctionDef) -> set[str]:
@@ -82,16 +77,14 @@ def call_refs(node: cst.CSTNode) -> set[str]:
         ``self.bar()``. Used as a soft ordering preference (callees before callers).
     """
     names: set[str] = set()
-
-    class _Visitor(cst.CSTVisitor):
-        def visit_Call(self, node: cst.Call) -> None:
-            func = node.func
-            if isinstance(func, cst.Name):
-                names.add(func.value)
-            elif isinstance(func, cst.Attribute) and isinstance(func.attr, cst.Name):
-                names.add(func.attr.value)
-
-    node.visit(_Visitor())
+    for call in walk(node):
+        if not isinstance(call, cst.Call):
+            continue
+        func = call.func
+        if isinstance(func, cst.Name):
+            names.add(func.value)
+        elif isinstance(func, cst.Attribute) and isinstance(func.attr, cst.Name):
+            names.add(func.attr.value)
     return names
 
 
