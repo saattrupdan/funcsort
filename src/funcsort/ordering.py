@@ -1,107 +1,102 @@
-"""Topological ordering of functions, classes and constants by call hierarchy."""
+"""Order a run of function/class definitions by call hierarchy, safely.
 
-from collections.abc import Iterable
+The ordering works on indices (not names) so that definitions sharing a name -
+for example a property and its setter - are handled correctly.
+"""
 
 
-def order_by_call_hierarchy(
-    unit_names: Iterable[str],
-    edges: dict[str, set[str]],
-    entry_name: str | None = None,
-    function_names: set[str] | None = None,
-    class_names: set[str] | None = None,
-) -> list[str]:
-    """Order units (functions, classes, constants) by call hierarchy.
-
-    Ordering:
-    1. Independent constants (no in-module function/class dependency), in original
-       source order.
-    2. Dependent constants, each preceded by the functions/classes it depends on
-       (callees first), in original source order.
-    3. Remaining classes, in dependency order (bases/used classes first).
-    4. Remaining functions:
-       - With an entry point: the entry point first, then a pre-order (caller before
-         callee) walk of the functions it calls, so the reader meets the top-level
-         function first. Any functions unreachable from the entry point follow in
-         dependency order (callees first).
-       - Without an entry point: dependency order (callees before callers).
-
-    Ties are broken alphabetically. Classes count as ``function_names`` when they
-    appear as dependencies.
+def _preferred_order(
+    names: list[str], soft: list[set[int]], entry_name: str | None
+) -> list[int]:
+    """Compute the call-hierarchy preference order (ignoring hard constraints).
 
     Args:
-        unit_names: All unit names, in original source order.
-        edges: Dict mapping unit name to the set of unit names it depends on.
-        entry_name: Optional entry point name (``main`` or ``__init__``).
-        function_names: Names that are functions or classes.
-        class_names: Names that are classes (a subset of ``function_names``).
+        names: Definition names, in original order.
+        soft: ``soft[i]`` is the set of indices ``i`` calls (callees).
+        entry_name: Optional entry point name.
 
     Returns:
-        Ordered list of unit names.
+        A permutation of ``range(len(names))``.
     """
-    original = list(unit_names)
-    function_names = function_names or set()
-    class_names = class_names or set()
+    n = len(names)
+    emitted = [False] * n
+    order: list[int] = []
 
-    if not original:
-        return []
+    def key(i: int) -> tuple[str, int]:
+        return (names[i], i)
 
-    constants = [n for n in original if n not in function_names]
-    classes = [n for n in original if n in class_names]
-    funcs = [n for n in original if n in function_names and n not in class_names]
-
-    def func_deps(name: str) -> set[str]:
-        """Return the dependencies of ``name`` that are functions or classes."""
-        return edges.get(name, set()) & function_names
-
-    independent_constants = [c for c in constants if not func_deps(c)]
-    dependent_constants = [c for c in constants if func_deps(c)]
-
-    result: list[str] = []
-    emitted: set[str] = set()
-
-    def emit(name: str) -> None:
-        if name not in emitted:
-            emitted.add(name)
-            result.append(name)
-
-    def emit_postorder(name: str, path: set[str]) -> None:
-        """Emit ``name`` after its function/class dependencies (callees first)."""
-        if name in emitted or name in path:
+    def emit_preorder(i: int, path: set[int]) -> None:
+        if emitted[i] or i in path:
             return
-        path.add(name)
-        for dep in sorted(func_deps(name)):
-            emit_postorder(dep, path)
-        path.discard(name)
-        emit(name)
-
-    def emit_preorder(name: str, path: set[str]) -> None:
-        """Emit ``name`` before its function/class dependencies (caller first)."""
-        if name in emitted or name in path:
-            return
-        path.add(name)
-        emit(name)
-        for dep in sorted(func_deps(name)):
+        path.add(i)
+        emitted[i] = True
+        order.append(i)
+        for dep in sorted(soft[i], key=key):
             emit_preorder(dep, path)
-        path.discard(name)
+        path.discard(i)
 
-    # 1. Independent constants, in original order.
-    for const in independent_constants:
-        emit(const)
+    def emit_postorder(i: int, path: set[int]) -> None:
+        if emitted[i] or i in path:
+            return
+        path.add(i)
+        for dep in sorted(soft[i], key=key):
+            emit_postorder(dep, path)
+        path.discard(i)
+        emitted[i] = True
+        order.append(i)
 
-    # 2. Dependent constants, each preceded by its callees, in original order.
-    for const in dependent_constants:
-        for dep in sorted(func_deps(const)):
-            emit_postorder(dep, set())
-        emit(const)
+    entry_idx = next((i for i in range(n) if names[i] == entry_name), None)
+    if entry_idx is not None:
+        # Entry point first, then the functions it calls, top-down.
+        emit_preorder(entry_idx, set())
 
-    # 3. Remaining classes, in dependency order (bases/used classes first).
-    for cls in sorted(classes):
-        emit_postorder(cls, set())
+    # Remaining definitions: callees before callers.
+    for i in sorted(range(n), key=key):
+        emit_postorder(i, set())
 
-    # 4. Remaining functions.
-    if entry_name and entry_name in funcs:
-        emit_preorder(entry_name, set())
-    for func in sorted(funcs):
-        emit_postorder(func, set())
+    return order
 
+
+def order_run(
+    names: list[str],
+    hard: list[set[int]],
+    soft: list[set[int]],
+    entry_name: str | None = None,
+) -> list[int]:
+    """Return a safe ordering of a run of definitions.
+
+    Definition-time dependencies (``hard``) are strict: a definition never appears
+    before something it needs at definition time. Within that constraint, the call
+    hierarchy (``soft``) is used as a preference - callees before callers, with the
+    entry point first - and ties break alphabetically then by original position.
+
+    Args:
+        names: Definition names, in original order.
+        hard: ``hard[i]`` is the set of indices that must precede ``i``.
+        soft: ``soft[i]`` is the set of indices ``i`` calls (callees).
+        entry_name: Optional entry point name (``main`` or ``__init__``).
+
+    Returns:
+        A permutation of ``range(len(names))``.
+    """
+    n = len(names)
+    if n <= 1:
+        return list(range(n))
+
+    preferred = _preferred_order(names, soft, entry_name)
+
+    # Stable topological sort: walk the preferred order, emitting the first index
+    # whose hard dependencies are all satisfied. On a cycle, fall back to the next
+    # preferred index so the original relative order is kept.
+    emitted = [False] * n
+    result: list[int] = []
+    remaining = list(preferred)
+    while remaining:
+        pick = next(
+            (idx for idx in remaining if all(emitted[d] for d in hard[idx])),
+            remaining[0],
+        )
+        emitted[pick] = True
+        result.append(pick)
+        remaining.remove(pick)
     return result

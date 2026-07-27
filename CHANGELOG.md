@@ -9,41 +9,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Comprehensive test suite with 72 tests covering:
-  - Module-level functions and call hierarchy
-  - Class methods and `__init__` ordering
-  - Decorator definitions before usage
-  - Cycles and edge cases
-  - Regression tests for all reported bugs
-  - Full real-world script test (hun-sum-mini)
+- Comprehensive test suite with 78 tests covering module-level and class-method
+  ordering, decorators, cycles, real-world scripts, and conservative-safety
+  regressions.
 - Support for detecting method calls (`self.method()`) within classes
-- Support for class references in type annotations
-- Support for generic type annotations (`list[T]`, `dict[K, V]`, etc.)
-- Support for type hints in class bodies
-- Support for class instantiations in class body assignments
+- Support for class references in type annotations and class bodies
 
 ### Changed
 
-- **Constants are no longer sorted** - they preserve their original positions
-- Only functions and classes are sorted by call hierarchy
-- Module structure: docstring → imports → constants (original order) → sorted
-  functions/classes → `__main__` blocks
-- Function ordering puts definitions before usages (callees before callers)
-- Entry point (`main`) comes first among functions
-- Classes referenced in type hints come before functions that use them
-- Decorator definitions come before decorated functions
+- **Conservative, safety-preserving sorting.** funcsort now only reorders
+  top-level functions/classes and methods within classes, and only within *runs*
+  of consecutive definitions. Constants, imports and all other module-level
+  statements are anchors that keep their exact original positions. Files with no
+  functions or classes are left completely untouched.
+- Reordering is constrained so it can never break definition-time name
+  resolution: a name used in a decorator, base class, annotation, parameter
+  default or class-body statement is always kept before the definition that uses
+  it. Property getters stay before their setters. Cycles fall back to the
+  original order.
+- Within a run, definitions are ordered by call hierarchy - the entry point
+  (`main`/`__init__`) first, then the functions it calls (top-down) - with
+  alphabetical tie-breaks.
 
 ### Fixed
 
-- Comments on constant definitions now preserved during sorting
-- Assert statements now sorted after their dependencies
-- Constants preserve their original blank-line separation between blocks; spacing is
-  only normalised when reordering brings two constants together
-- Assert statements don't get extra blank lines before them (stick to previous item)
-- Proper PEP 8 spacing: 1 blank line after imports before constants/module-level
-  calls, 2 blank lines before functions/classes
-- Unused constants maintain their original positions
-- Logger/module variables remain before functions that reference them
+- No longer hoists imports across intervening module-level code (e.g. staged
+  imports separated by setup statements).
+- No longer moves a variable away from module-level code that uses it (e.g. a
+  `fmt` value used by `logging.basicConfig`).
+- No longer moves a function/class after code that needs it at definition time
+  (e.g. a function used as a class-attribute default, or a class used in another
+  class's method signature).
+- Property/setter pairs keep getter-before-setter order.
+- Comments stay attached to their definitions; PEP 8 spacing (2 blank lines
+  before top-level defs, 1 between methods) is applied without trailing
+  whitespace.
+- No longer strips the trailing newline from uv-script files (those with a
+  `# /// script ... # ///` header), which previously made the end-of-file-fixer
+  pre-commit hook re-add it on every run.
 
 ## [v0.1.0] - 2026-07-26
 

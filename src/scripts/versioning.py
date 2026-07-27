@@ -12,22 +12,22 @@ import sys
 from pathlib import Path
 
 
-def bump_patch() -> None:
-    """Add one to the patch version."""
-    _, _, patch = get_current_version()
-    set_new_version(0, 0, patch + 1)
+def get_current_version() -> tuple[int, int, int]:
+    """Fetch the current version of the package.
 
+    Returns:
+        A tuple of (major, minor, patch).
 
-def bump_minor() -> None:
-    """Add one to the minor version."""
-    _, minor, _ = get_current_version()
-    set_new_version(0, minor + 1, 0)
-
-
-def bump_major() -> None:
-    """Add one to the major version."""
-    major, _, _ = get_current_version()
-    set_new_version(major + 1, 0, 0)
+    Raises:
+        RuntimeError:
+            If no version can be found in the `pyproject.toml` file.
+    """
+    pyproject_path = Path("pyproject.toml")
+    pyproject = pyproject_path.read_text(encoding="utf-8")
+    match = re.search(r'version = "(\d+)\.(\d+)\.(\d+)"', pyproject)
+    if not match:
+        raise RuntimeError("Could not find version in pyproject.toml.")
+    return int(match.group(1)), int(match.group(2)), int(match.group(3))
 
 
 def set_new_version(major: int, minor: int, patch: int) -> None:
@@ -95,22 +95,22 @@ def set_new_version(major: int, minor: int, patch: int) -> None:
     print(f"✓ Released v{version}")
 
 
-def get_current_version() -> tuple[int, int, int]:
-    """Fetch the current version of the package.
+def bump_major() -> None:
+    """Add one to the major version."""
+    major, _, _ = get_current_version()
+    set_new_version(major + 1, 0, 0)
 
-    Returns:
-        A tuple of (major, minor, patch).
 
-    Raises:
-        RuntimeError:
-            If no version can be found in the `pyproject.toml` file.
-    """
-    pyproject_path = Path("pyproject.toml")
-    pyproject = pyproject_path.read_text(encoding="utf-8")
-    match = re.search(r'version = "(\d+)\.(\d+)\.(\d+)"', pyproject)
-    if not match:
-        raise RuntimeError("Could not find version in pyproject.toml.")
-    return int(match.group(1)), int(match.group(2)), int(match.group(3))
+def bump_minor() -> None:
+    """Add one to the minor version."""
+    _, minor, _ = get_current_version()
+    set_new_version(0, minor + 1, 0)
+
+
+def bump_patch() -> None:
+    """Add one to the patch version."""
+    _, _, patch = get_current_version()
+    set_new_version(0, 0, patch + 1)
 
 
 if __name__ == "__main__":

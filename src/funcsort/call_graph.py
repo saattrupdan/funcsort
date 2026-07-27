@@ -1,340 +1,127 @@
-"""Extract call graphs from function bodies."""
+"""Extract name references from functions and classes.
+
+Two kinds of reference matter for safe sorting:
+
+- *Definition-time* references: names Python resolves when the ``def``/``class``
+  statement itself executes (decorators, base classes, parameter annotations and
+  defaults, return annotations, and class-body statements). These are hard
+  ordering constraints - a name used here must already be defined.
+- *Call-time* references: names used inside function bodies. These only matter at
+  call time, so they are a soft preference used to order callees before callers.
+"""
 
 import libcst as cst
-import libcst.matchers as m
-
-from .models import SortableUnit
 
 
-class _CallCollector(cst.CSTVisitor):
-    """Collect all function/method names and name references within a function body.
-
-    Ignores nested function definitions. Collects:
-    - Bare function calls (foo())
-    - Method calls (self.foo())
-    - Bare name references that could refer to siblings (e.g., CONSTANT)
-    """
-
-    def __init__(self) -> None:
-        self.calls: set[str] = set()
-        self._depth: int = 0
-
-    def on_visit(self, node: cst.CSTNode) -> bool:
-        if m.matches(node, m.FunctionDef()):
-            # Only visit body of top-level function (depth 0)
-            # Nested functions (depth > 0) should be skipped
-            if self._depth > 0:
-                return False
-            self._depth += 1
-        return True
-
-    def on_leave(self, original_node: cst.CSTNode) -> None:
-        if m.matches(original_node, m.FunctionDef()):
-            self._depth -= 1
-        if m.matches(original_node, m.Call()) and isinstance(original_node, cst.Call):
-            func = original_node.func
-            # Handle both bare function calls and method calls (self.foo())
-            if m.matches(func, m.Name()) and isinstance(func, cst.Name):
-                self.calls.add(func.value)
-            elif m.matches(func, m.Attribute()) and isinstance(func, cst.Attribute):
-                # For self.method(), extract just 'method'
-                if isinstance(func.attr, cst.Name):
-                    self.calls.add(func.attr.value)
-        elif m.matches(original_node, m.Name()) and isinstance(original_node, cst.Name):
-            # Also collect bare name references (e.g., CONSTANT in print(CONSTANT))
-            # Skip builtins and common locals
-            name = original_node.value
-            if name not in ("None", "True", "False", "self", "cls"):
-                self.calls.add(name)
-
-
-def build_call_graph(units: list[SortableUnit]) -> dict[str, set[str]]:
-    """Build a dependency graph for a list of sortable units.
-
-    Creates edges from a unit to its dependencies (function calls, decorator usages,
-    and type hint references).
+def collect_names(node: cst.CSTNode | None) -> set[str]:
+    """Collect every ``Name`` value appearing anywhere in a node.
 
     Args:
-        units: List of sortable units in scope.
+        node: The node to scan (or None).
 
     Returns:
-        Dict mapping unit name to set of units it depends on.
+        The set of names referenced. Over-approximates (e.g. attribute names are
+        included too), which is safe for dependency detection.
     """
-    unit_names = {unit.name for unit in units}
-    graph: dict[str, set[str]] = {}
+    if node is None:
+        return set()
 
-    for unit in units:
-        deps: set[str] = set()
-        if isinstance(unit.node, cst.FunctionDef):
-            calls = extract_calls(unit.node)
-            decorators = extract_decorators(unit.node)
-            type_refs = extract_type_annotations(unit.node)
-            deps = calls | decorators | type_refs
-        elif isinstance(unit.node, cst.ClassDef):
-            # Classes can depend on base classes and type hints in class body
-            base_refs = extract_class_bases(unit.node)
-            body_refs = extract_class_body_type_refs(unit.node)
-            deps = base_refs | body_refs
-        elif isinstance(unit.node, cst.SimpleStatementLine):
-            # Constants are stored as SimpleStatementLine (to preserve comments)
-            assert isinstance(unit.node, cst.SimpleStatementLine)
-            inner = unit.node.body[0] if unit.node.body else None
-            if isinstance(inner, cst.AnnAssign):
-                if inner.annotation:
-                    type_refs = _extract_names_from_annotation(inner.annotation.annotation)
-                    deps = type_refs
-                if inner.value:
-                    value_refs = _extract_names_from_assign_value(inner.value)
-                    deps = deps | value_refs
-            elif isinstance(inner, cst.Assign):
-                value_refs = _extract_names_from_assign_value(inner.value)
-                deps = value_refs
-            elif isinstance(inner, cst.Assert):
-                # Assert depends on names it references in the test
-                assert isinstance(inner, cst.Assert)
-                value_refs = _extract_names_from_assign_value(inner.test)
-                deps = value_refs
-        # Filter to only sibling units (exclude self-references)
-        graph[unit.name] = (deps & unit_names) - {unit.name}
+    names: set[str] = set()
 
-    return graph
+    class _Visitor(cst.CSTVisitor):
+        def visit_Name(self, node: cst.Name) -> None:
+            names.add(node.value)
+
+    node.visit(_Visitor())
+    return names
 
 
-def extract_decorators(func_node: cst.FunctionDef) -> set[str]:
-    """Extract all decorator names from a function definition.
-
-    Only extracts bare Name decorators (e.g. @my_decorator), not
-    complex expressions (e.g. @decorator_factory()).
+def _signature_names(func: cst.FunctionDef) -> set[str]:
+    """Return names referenced in a function's decorators and signature.
 
     Args:
-        func_node: The function definition node.
+        func: The function definition.
 
     Returns:
-        Set of decorator names.
+        Names from decorators, parameter annotations/defaults and the return
+        annotation - everything evaluated when the ``def`` executes.
     """
-    decorators: set[str] = set()
-    for decorator in func_node.decorators:
-        if m.matches(decorator.decorator, m.Name()):
-            name = decorator.decorator
-            assert isinstance(name, cst.Name)
-            decorators.add(name.value)
-    return decorators
+    names: set[str] = set()
 
+    for decorator in func.decorators:
+        names |= collect_names(decorator.decorator)
 
-def extract_calls(func_node: cst.FunctionDef) -> set[str]:
-    """Extract all function calls from a function body.
+    params = func.params
+    all_params = [*params.posonly_params, *params.params, *params.kwonly_params]
+    star_arg = params.star_arg
+    if isinstance(star_arg, cst.Param):
+        all_params.append(star_arg)
+    if isinstance(params.star_kwarg, cst.Param):
+        all_params.append(params.star_kwarg)
 
-    Args:
-        func_node: The function definition node.
-
-    Returns:
-        Set of function names called within the function.
-    """
-    collector = _CallCollector()
-    func_node.visit(collector)
-    return collector.calls
-
-
-def extract_type_annotations(func_node: cst.FunctionDef) -> set[str]:
-    """Extract class/type references from function type annotations and defaults.
-
-    Extracts bare Name nodes from:
-    - Parameter annotations
-    - Return type annotation
-    - Default values (including lambdas)
-
-    Args:
-        func_node: The function definition node.
-
-    Returns:
-        Set of type/class names referenced in annotations and defaults.
-    """
-    refs: set[str] = set()
-
-    # Extract from parameters (annotation and default values)
-    for param in func_node.params.params:
+    for param in all_params:
         if param.annotation:
-            refs.update(_extract_names_from_annotation(param.annotation.annotation))
+            names |= collect_names(param.annotation.annotation)
         if param.default:
-            refs.update(_extract_names_from_expression(param.default))
+            names |= collect_names(param.default)
 
-    # Handle *args (star_arg) if present - can be Param or ParamStar
-    if func_node.params.star_arg and not isinstance(
-        func_node.params.star_arg, (cst.MaybeSentinel, cst.ParamStar)
-    ):
-        if func_node.params.star_arg.annotation:
-            refs.update(
-                _extract_names_from_annotation(func_node.params.star_arg.annotation.annotation)
-            )
+    if func.returns:
+        names |= collect_names(func.returns.annotation)
 
-    # Handle **kwargs (star_kwarg) if present
-    if func_node.params.star_kwarg and not isinstance(
-        func_node.params.star_kwarg, cst.MaybeSentinel
-    ):
-        if func_node.params.star_kwarg.annotation:
-            refs.update(
-                _extract_names_from_annotation(func_node.params.star_kwarg.annotation.annotation)
-            )
-
-    # Extract from return type
-    if func_node.returns:
-        refs.update(_extract_names_from_annotation(func_node.returns.annotation))
-
-    return refs
+    return names
 
 
-def _extract_names_from_annotation(annotation: cst.BaseExpression) -> set[str]:
-    """Extract bare Name references from a type annotation.
-
-    Handles:
-    - Name (e.g., Item)
-    - Subscript (e.g., list[T], dict[K, V])
-    - BinaryOperation with BitOr (e.g., Input | Config for Union types)
-    - Attribute (e.g., module.Class)
+def call_refs(node: cst.CSTNode) -> set[str]:
+    """Return names that are called within a node (bodies included).
 
     Args:
-        annotation: The annotation expression.
+        node: A ``FunctionDef`` or ``ClassDef`` node.
 
     Returns:
-        Set of type/class names referenced.
+        The set of called names, e.g. ``foo`` in ``foo()`` and ``bar`` in
+        ``self.bar()``. Used as a soft ordering preference (callees before callers).
     """
-    refs: set[str] = set()
+    names: set[str] = set()
 
-    if m.matches(annotation, m.Name()):
-        assert isinstance(annotation, cst.Name)
-        refs.add(annotation.value)
-    elif m.matches(annotation, m.Subscript()):
-        assert isinstance(annotation, cst.Subscript)
-        # For list[T], dict[K, V], etc. - extract the base and args
-        if m.matches(annotation.value, m.Name()):
-            assert isinstance(annotation.value, cst.Name)
-            refs.add(annotation.value.value)
-        for item in annotation.slice:
-            # Unwrap Index if present (libcst wraps subscript elements in Index)
-            slice_node = item.slice
-            if isinstance(slice_node, cst.Index):
-                slice_node = slice_node.value
-            if isinstance(slice_node, cst.Name):
-                refs.add(slice_node.value)
-            elif m.matches(slice_node, m.Subscript()):
-                assert isinstance(slice_node, cst.Subscript)
-                refs.update(_extract_names_from_annotation(slice_node))
-    elif m.matches(annotation, m.BinaryOperation()):
-        # Handle Union types: Input | Config
-        assert isinstance(annotation, cst.BinaryOperation)
-        if m.matches(annotation.operator, m.BitOr()):
-            refs.update(_extract_names_from_annotation(annotation.left))
-            refs.update(_extract_names_from_annotation(annotation.right))
-    elif m.matches(annotation, m.Attribute()):
-        # Handle module.Class - extract just the class name
-        assert isinstance(annotation, cst.Attribute)
-        if isinstance(annotation.attr, cst.Name):
-            refs.add(annotation.attr.value)
+    class _Visitor(cst.CSTVisitor):
+        def visit_Call(self, node: cst.Call) -> None:
+            func = node.func
+            if isinstance(func, cst.Name):
+                names.add(func.value)
+            elif isinstance(func, cst.Attribute) and isinstance(func.attr, cst.Name):
+                names.add(func.attr.value)
 
-    return refs
+    node.visit(_Visitor())
+    return names
 
 
-def extract_class_bases(class_node: cst.ClassDef) -> set[str]:
-    """Extract base class references from a class definition.
+def def_time_refs(node: cst.CSTNode) -> set[str]:
+    """Return names a function/class definition resolves at definition time.
 
     Args:
-        class_node: The class definition node.
+        node: A ``FunctionDef`` or ``ClassDef`` node.
 
     Returns:
-        Set of base class names.
+        Names referenced in decorators, signatures, base classes and class-body
+        statements (but not inside method bodies).
     """
-    refs: set[str] = set()
-    for base in class_node.bases:
-        if m.matches(base.value, m.Name()):
-            assert isinstance(base.value, cst.Name)
-            refs.add(base.value.value)
-    return refs
+    if isinstance(node, cst.FunctionDef):
+        return _signature_names(node)
 
+    if isinstance(node, cst.ClassDef):
+        names: set[str] = set()
+        for decorator in node.decorators:
+            names |= collect_names(decorator.decorator)
+        for base in node.bases:
+            names |= collect_names(base.value)
+        for keyword in node.keywords:
+            names |= collect_names(keyword.value)
+        for stmt in node.body.body:
+            if isinstance(stmt, cst.FunctionDef):
+                # Method bodies run at call time; only the signature runs now.
+                names |= _signature_names(stmt)
+            else:
+                names |= collect_names(stmt)
+        return names
 
-def _extract_names_from_expression(expr: cst.BaseExpression) -> set[str]:
-    """Extract all function/class names referenced in an expression.
-
-    Walks the expression tree to find:
-    - Function calls (bare and method calls)
-    - Bare name references (e.g., type hints, variables)
-    - Names inside lambdas
-
-    Args:
-        expr: The expression to walk.
-
-    Returns:
-        Set of function/class names referenced.
-    """
-    refs: set[str] = set()
-
-    class _NameVisitor(cst.CSTVisitor):
-        def __init__(self) -> None:
-            self.names: set[str] = set()
-
-        def on_visit(self, node: cst.CSTNode) -> bool:
-            if m.matches(node, m.Call()):
-                assert isinstance(node, cst.Call)
-                func = node.func
-                # Extract bare function calls
-                if m.matches(func, m.Name()):
-                    assert isinstance(func, cst.Name)
-                    self.names.add(func.value)
-                # Extract method calls like self.method()
-                elif m.matches(func, m.Attribute()):
-                    assert isinstance(func, cst.Attribute)
-                    if isinstance(func.attr, cst.Name):
-                        self.names.add(func.attr.value)
-            elif m.matches(node, m.Name()):
-                # Extract bare names (e.g., type hints, variables, classes)
-                # But skip common builtins
-                assert isinstance(node, cst.Name)
-                if node.value not in ("None", "True", "False", "self", "cls"):
-                    self.names.add(node.value)
-            # Lambda bodies can contain calls/refs
-            return True
-
-    visitor = _NameVisitor()
-    expr.visit(visitor)
-    return visitor.names
-
-
-def _extract_names_from_assign_value(value: cst.BaseExpression) -> set[str]:
-    """Extract function/class names referenced in an assignment value.
-
-    Alias for _extract_names_from_expression for backwards compatibility.
-    """
-    return _extract_names_from_expression(value)
-
-
-def extract_class_body_type_refs(class_node: cst.ClassDef) -> set[str]:
-    """Extract type references from class body annotations and assignments.
-
-    Extracts bare Name nodes from:
-    - Annotated assignments in the class body (e.g., `item: Item`)
-    - Regular assignments where value is a class call (e.g., `device = DummyDevice()`)
-
-    Args:
-        class_node: The class definition node.
-
-    Returns:
-        Set of type/class names referenced in class body.
-    """
-    refs: set[str] = set()
-
-    for stmt in class_node.body.body:
-        # Statements are wrapped in SimpleStatementLine
-        if m.matches(stmt, m.SimpleStatementLine()):
-            assert isinstance(stmt, cst.SimpleStatementLine)
-            for inner_stmt in stmt.body:
-                # Handle annotated assignments like `item: Item`
-                if m.matches(inner_stmt, m.AnnAssign()):
-                    assert isinstance(inner_stmt, cst.AnnAssign)
-                    annotation = inner_stmt.annotation
-                    if annotation:
-                        refs.update(_extract_names_from_annotation(annotation.annotation))
-                # Handle regular assignments like `device = DummyDevice()`
-                elif m.matches(inner_stmt, m.Assign()):
-                    assert isinstance(inner_stmt, cst.Assign)
-                    refs.update(_extract_names_from_assign_value(inner_stmt.value))
-
-    return refs
+    return collect_names(node)
