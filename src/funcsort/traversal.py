@@ -14,23 +14,6 @@ import libcst as cst
 _FIELD_NAMES: dict[type[cst.CSTNode], tuple[str, ...]] = {}
 
 
-def field_names(node: cst.CSTNode) -> tuple[str, ...]:
-    """Return the dataclass field names of a node's type, cached by type.
-
-    Args:
-        node: The node whose field names are needed.
-
-    Returns:
-        The field names, in declaration order.
-    """
-    node_type = type(node)
-    names = _FIELD_NAMES.get(node_type)
-    if names is None:
-        names = tuple(field.name for field in dataclass_fields(node))
-        _FIELD_NAMES[node_type] = names
-    return names
-
-
 def walk(node: cst.CSTNode) -> Iterator[cst.CSTNode]:
     """Yield ``node`` and every descendant node.
 
@@ -54,3 +37,20 @@ def walk(node: cst.CSTNode) -> Iterator[cst.CSTNode]:
                 stack.append(value)
             elif type(value) is tuple:
                 stack.extend(item for item in value if isinstance(item, cst.CSTNode))
+
+
+def field_names(node: cst.CSTNode) -> tuple[str, ...]:
+    """Return the dataclass field names of a node's type, cached by type.
+
+    Args:
+        node: The node whose field names are needed.
+
+    Returns:
+        The field names, in declaration order.
+    """
+    node_type = type(node)
+    names = _FIELD_NAMES.get(node_type)
+    if names is None:
+        names = tuple(field.name for field in dataclass_fields(node))
+        _FIELD_NAMES[node_type] = names
+    return names

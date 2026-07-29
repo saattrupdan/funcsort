@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Corrected sorting order: callers now appear before callees** (was reversed).
+  Entry points (`main`/`__init__`) are first, followed by functions they call
+  (top-down call hierarchy). Roots (functions not called by others) are emitted
+  alphabetically, then any remaining functions in cycles.
+
 ## [v0.1.2] - 2026-07-27
 
 ### Changed

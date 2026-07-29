@@ -33,6 +33,40 @@ _CLASS_CONTAINERS = (
 )
 
 
+def process_path(path: Path, fix: bool) -> tuple[bool, list[Path]]:
+    """Process a file or directory.
+
+    Args:
+        path: File or directory to process.
+        fix: Whether to fix in place or just check.
+
+    Returns:
+        Tuple of (should_exit_nonzero, list of processed files).
+    """
+    if path.is_file():
+        files = [path]
+    elif path.is_dir():
+        all_files = list(path.rglob("*.py"))
+        files = [f for f in all_files if not _is_ignored(f, path)]
+    else:
+        return False, []
+
+    changed_files: list[Path] = []
+    should_exit = False
+
+    for file_path in files:
+        source = file_path.read_text(encoding="utf-8")
+        sorted_source = sort_source(source)
+
+        if sorted_source != source:
+            changed_files.append(file_path)
+            should_exit = True
+            if fix:
+                file_path.write_text(sorted_source, encoding="utf-8")
+
+    return should_exit, changed_files
+
+
 def _is_ignored(file_path: Path, start_dir: Path) -> bool:
     """Check if a file is ignored by gitignore patterns in parent directories.
 
@@ -68,6 +102,78 @@ def _is_ignored(file_path: Path, start_dir: Path) -> bool:
         current = current.parent
 
     return False
+
+
+def sort_source(source: str) -> str:
+    """Sort functions, classes and methods in Python source code.
+
+    Args:
+        source: Python source code.
+
+    Returns:
+        Source with definitions sorted by call hierarchy. Anything that is not a
+        top-level function/class (or method) keeps its original position.
+    """
+    # Extract module header (e.g., uv script metadata: # /// script ... # ///).
+    # Split on "\n" (not splitlines) so a trailing newline survives the round-trip.
+    header = ""
+    lines = source.split("\n")
+    if lines and lines[0].startswith("# ///"):
+        header_lines = []
+        i = 0
+        while i < len(lines):
+            header_lines.append(lines[i])
+            if lines[i].strip() == "# ///":
+                break
+            i += 1
+        header = "\n".join(header_lines)
+        # Skip header and any blank lines after it
+        while i + 1 < len(lines) and lines[i + 1] == "":
+            i += 1
+        source = "\n".join(lines[i + 1 :])
+
+    module = cst.parse_module(source)
+
+    # Sort top-level functions/classes, then methods within each class.
+    new_body = _reorder(list(module.body), entry_name="main", blank_count=2)
+    module = module.with_changes(body=tuple(new_body))
+    module = _sort_classes(module)
+
+    code = module.code
+    if header:
+        code = header + "\n\n" + code
+    return code
+
+
+def _reorder(
+    nodes: Sequence[cst.BaseStatement], entry_name: str, blank_count: int
+) -> list[cst.BaseStatement]:
+    """Reorder each run of consecutive definitions, keeping anchors in place.
+
+    Args:
+        nodes: The statements of a module or class body, in order.
+        entry_name: Entry point name to prioritise within a run.
+        blank_count: Blank lines between definitions when a run is reordered.
+
+    Returns:
+        The statements with each definition-run sorted; non-definitions untouched.
+    """
+    result: list[cst.BaseStatement] = []
+    i = 0
+    while i < len(nodes):
+        start = i
+        run: list[Definition] = []
+        while i < len(nodes) and isinstance(
+            node := nodes[i], (cst.FunctionDef, cst.ClassDef)
+        ):
+            run.append(node)
+            i += 1
+        if run:
+            result.extend(_sort_run(run, entry_name, blank_count, at_start=start == 0))
+        else:
+            result.append(nodes[i])
+            i += 1
+    return result
 
 
 def _sort_run(
@@ -112,42 +218,6 @@ def _sort_run(
     return rebuild_run(run, order, blank_count, preserve_first_leading=at_start)
 
 
-def _reorder(
-    nodes: Sequence[cst.BaseStatement], entry_name: str, blank_count: int
-) -> list[cst.BaseStatement]:
-    """Reorder each run of consecutive definitions, keeping anchors in place.
-
-    Args:
-        nodes: The statements of a module or class body, in order.
-        entry_name: Entry point name to prioritise within a run.
-        blank_count: Blank lines between definitions when a run is reordered.
-
-    Returns:
-        The statements with each definition-run sorted; non-definitions untouched.
-    """
-    result: list[cst.BaseStatement] = []
-    i = 0
-    while i < len(nodes):
-        start = i
-        run: list[Definition] = []
-        while i < len(nodes) and isinstance(
-            node := nodes[i], (cst.FunctionDef, cst.ClassDef)
-        ):
-            run.append(node)
-            i += 1
-        if run:
-            result.extend(_sort_run(run, entry_name, blank_count, at_start=start == 0))
-        else:
-            result.append(nodes[i])
-            i += 1
-    return result
-
-
-def _same_sequence(a: Sequence[cst.CSTNode], b: Sequence[cst.CSTNode]) -> bool:
-    """Return whether two node lists are the identical objects in the same order."""
-    return len(a) == len(b) and all(x is y for x, y in zip(a, b))
-
-
 def _sort_classes[NodeT: cst.CSTNode](node: NodeT) -> NodeT:
     """Reorder methods within every class definition in ``node``'s subtree.
 
@@ -189,76 +259,6 @@ def _sort_classes[NodeT: cst.CSTNode](node: NodeT) -> NodeT:
     return node
 
 
-def sort_source(source: str) -> str:
-    """Sort functions, classes and methods in Python source code.
-
-    Args:
-        source: Python source code.
-
-    Returns:
-        Source with definitions sorted by call hierarchy. Anything that is not a
-        top-level function/class (or method) keeps its original position.
-    """
-    # Extract module header (e.g., uv script metadata: # /// script ... # ///).
-    # Split on "\n" (not splitlines) so a trailing newline survives the round-trip.
-    header = ""
-    lines = source.split("\n")
-    if lines and lines[0].startswith("# ///"):
-        header_lines = []
-        i = 0
-        while i < len(lines):
-            header_lines.append(lines[i])
-            if lines[i].strip() == "# ///":
-                break
-            i += 1
-        header = "\n".join(header_lines)
-        # Skip header and any blank lines after it
-        while i + 1 < len(lines) and lines[i + 1] == "":
-            i += 1
-        source = "\n".join(lines[i + 1 :])
-
-    module = cst.parse_module(source)
-
-    # Sort top-level functions/classes, then methods within each class.
-    new_body = _reorder(list(module.body), entry_name="main", blank_count=2)
-    module = module.with_changes(body=tuple(new_body))
-    module = _sort_classes(module)
-
-    code = module.code
-    if header:
-        code = header + "\n\n" + code
-    return code
-
-
-def process_path(path: Path, fix: bool) -> tuple[bool, list[Path]]:
-    """Process a file or directory.
-
-    Args:
-        path: File or directory to process.
-        fix: Whether to fix in place or just check.
-
-    Returns:
-        Tuple of (should_exit_nonzero, list of processed files).
-    """
-    if path.is_file():
-        files = [path]
-    elif path.is_dir():
-        all_files = list(path.rglob("*.py"))
-        files = [f for f in all_files if not _is_ignored(f, path)]
-    else:
-        return False, []
-
-    changed_files: list[Path] = []
-    should_exit = False
-
-    for file_path in files:
-        source = file_path.read_text(encoding="utf-8")
-        sorted_source = sort_source(source)
-
-        if sorted_source != source:
-            changed_files.append(file_path)
-            should_exit = True
-            if fix:
-                file_path.write_text(sorted_source, encoding="utf-8")
-
-    return should_exit, changed_files
+def _same_sequence(a: Sequence[cst.CSTNode], b: Sequence[cst.CSTNode]) -> bool:
+    """Return whether two node lists are the identical objects in the same order."""
+    return len(a) == len(b) and all(x is y for x, y in zip(a, b))

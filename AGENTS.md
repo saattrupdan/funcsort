@@ -87,11 +87,11 @@ No tests (explicit requirement #5).
 ### Function ordering
 
 - Module order: docstring → imports → sorted units → `__main__` blocks
-- Sorted units (functions, classes, constants) ordered by dependencies:
-  - Callees before callers (definitions before usages)
-  - Constants calling functions: function before constant
-  - Class references in type hints: class before dependent
-  - Class instantiations in body: class before dependent
+- Sorted units (functions, classes, constants) ordered by call hierarchy:
+  - Callers before callees (callers appear before functions they call)
+  - Constants calling functions: constant before function
+  - Class references in type hints: dependent before class
+  - Class instantiations in body: dependent before class
   - Decorator definitions before their usages
 - Entry points (`main`, `__init__`) first among functions/classes (even with dependencies)
 - Ties broken alphabetically

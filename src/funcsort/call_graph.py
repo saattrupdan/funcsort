@@ -15,57 +15,6 @@ import libcst as cst
 from .traversal import walk
 
 
-def collect_names(node: cst.CSTNode | None) -> set[str]:
-    """Collect every ``Name`` value appearing anywhere in a node.
-
-    Args:
-        node: The node to scan (or None).
-
-    Returns:
-        The set of names referenced. Over-approximates (e.g. attribute names are
-        included too), which is safe for dependency detection.
-    """
-    if node is None:
-        return set()
-
-    return {n.value for n in walk(node) if isinstance(n, cst.Name)}
-
-
-def _signature_names(func: cst.FunctionDef) -> set[str]:
-    """Return names referenced in a function's decorators and signature.
-
-    Args:
-        func: The function definition.
-
-    Returns:
-        Names from decorators, parameter annotations/defaults and the return
-        annotation - everything evaluated when the ``def`` executes.
-    """
-    names: set[str] = set()
-
-    for decorator in func.decorators:
-        names |= collect_names(decorator.decorator)
-
-    params = func.params
-    all_params = [*params.posonly_params, *params.params, *params.kwonly_params]
-    star_arg = params.star_arg
-    if isinstance(star_arg, cst.Param):
-        all_params.append(star_arg)
-    if isinstance(params.star_kwarg, cst.Param):
-        all_params.append(params.star_kwarg)
-
-    for param in all_params:
-        if param.annotation:
-            names |= collect_names(param.annotation.annotation)
-        if param.default:
-            names |= collect_names(param.default)
-
-    if func.returns:
-        names |= collect_names(func.returns.annotation)
-
-    return names
-
-
 def call_refs(node: cst.CSTNode) -> set[str]:
     """Return names that are called within a node (bodies included).
 
@@ -118,3 +67,54 @@ def def_time_refs(node: cst.CSTNode) -> set[str]:
         return names
 
     return collect_names(node)
+
+
+def _signature_names(func: cst.FunctionDef) -> set[str]:
+    """Return names referenced in a function's decorators and signature.
+
+    Args:
+        func: The function definition.
+
+    Returns:
+        Names from decorators, parameter annotations/defaults and the return
+        annotation - everything evaluated when the ``def`` executes.
+    """
+    names: set[str] = set()
+
+    for decorator in func.decorators:
+        names |= collect_names(decorator.decorator)
+
+    params = func.params
+    all_params = [*params.posonly_params, *params.params, *params.kwonly_params]
+    star_arg = params.star_arg
+    if isinstance(star_arg, cst.Param):
+        all_params.append(star_arg)
+    if isinstance(params.star_kwarg, cst.Param):
+        all_params.append(params.star_kwarg)
+
+    for param in all_params:
+        if param.annotation:
+            names |= collect_names(param.annotation.annotation)
+        if param.default:
+            names |= collect_names(param.default)
+
+    if func.returns:
+        names |= collect_names(func.returns.annotation)
+
+    return names
+
+
+def collect_names(node: cst.CSTNode | None) -> set[str]:
+    """Collect every ``Name`` value appearing anywhere in a node.
+
+    Args:
+        node: The node to scan (or None).
+
+    Returns:
+        The set of names referenced. Over-approximates (e.g. attribute names are
+        included too), which is safe for dependency detection.
+    """
+    if node is None:
+        return set()
+
+    return {n.value for n in walk(node) if isinstance(n, cst.Name)}
