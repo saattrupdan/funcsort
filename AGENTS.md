@@ -29,17 +29,17 @@ funcsort/
 ├── src/
 │   ├── funcsort/          # Package source code
 │   │   ├── __init__.py
-│   │   ├── call_graph.py  # Build call graphs from function bodies
+│   │   ├── call_graph.py  # Extract def-time and call-time name references
 │   │   ├── cli.py         # Click-based CLI entry point
-│   │   ├── core.py        # Main sorting orchestration (libcst visitor)
-│   │   ├── models.py      # Data models (SortableUnit, type aliases)
-│   │   ├── ordering.py    # Topological sort by call hierarchy
-│   │   ├── parsing.py     # Extract functions/methods using libcst
-│   │   └── rewrite.py     # Reassemble sorted code
+│   │   ├── core.py        # Main sorting orchestration over the libcst tree
+│   │   ├── ordering.py    # Order a run of definitions by call hierarchy
+│   │   ├── rewrite.py     # Reassemble sorted definitions with PEP 8 spacing
+│   │   └── traversal.py   # Fast, read-only libcst node traversal helpers
 │   └── scripts/           # Executable scripts
+│       ├── fix_dot_env_file.py # Check/repair the repo .env file
 │       ├── funcsort.py    # Script wrapper (uv run entry point)
 │       └── versioning.py  # Version bumping and release automation
-└── tests/                 # Test files (currently none per requirement)
+└── tests/                 # pytest suite (sorting, spacing, safety, comments)
 ```
 
 ## Running it
@@ -63,7 +63,17 @@ uv run src/scripts/versioning.py <major|minor|patch>
 
 ## Testing
 
-No tests (explicit requirement #5).
+The suite lives in `tests/` and runs with pytest (config in `pyproject.toml`;
+doctests and coverage are enabled). Run it with:
+
+```bash
+make test      # pytest + coverage badge refresh
+uv run pytest  # pytest only
+```
+
+Tests assert the sorting order (callers before callees, entry points first) and
+guard against regressions in spacing, comment preservation and conservative
+safety.
 
 ## Conventions
 
@@ -89,10 +99,13 @@ No tests (explicit requirement #5).
 - Module order: docstring → imports → sorted units → `__main__` blocks
 - Sorted units (functions, classes, constants) ordered by call hierarchy:
   - Callers before callees (callers appear before functions they call)
-  - Constants calling functions: constant before function
-  - Class references in type hints: dependent before class
-  - Class instantiations in body: dependent before class
-  - Decorator definitions before their usages
+  - Definition-time references still win over the call-hierarchy preference,
+    since the referenced name must already exist when the `def`/`class` runs:
+    - Constants calling functions: function before constant
+    - Class references in type hints: class before dependent
+    - Decorator definitions before their usages
+  - Class instantiations in body: dependent before class (call-time, so the
+    caller comes first)
 - Entry points (`main`, `__init__`) first among functions/classes (even with dependencies)
 - Ties broken alphabetically
 

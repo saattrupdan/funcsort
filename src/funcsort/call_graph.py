@@ -7,7 +7,7 @@ Two kinds of reference matter for safe sorting:
   defaults, return annotations, and class-body statements). These are hard
   ordering constraints - a name used here must already be defined.
 - *Call-time* references: names used inside function bodies. These only matter at
-  call time, so they are a soft preference used to order callees before callers.
+  call time, so they are a soft preference used to order callers before callees.
 """
 
 import libcst as cst
@@ -23,7 +23,7 @@ def call_refs(node: cst.CSTNode) -> set[str]:
 
     Returns:
         The set of called names, e.g. ``foo`` in ``foo()`` and ``bar`` in
-        ``self.bar()``. Used as a soft ordering preference (callees before callers).
+        ``self.bar()``. Used as a soft ordering preference (callers before callees).
     """
     names: set[str] = set()
     for call in walk(node):

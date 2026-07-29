@@ -37,13 +37,15 @@ The `PATH` argument can be a file or directory (defaults to current directory).
 
 ## Sorting Rules
 
-### Functions
+### Functions and classes
 
-Functions are sorted by top-down call hierarchy:
+Top-level functions and classes are sorted together by top-down call hierarchy:
 
 1. `main` function is always first
 2. Functions that call other functions appear before their callees
-3. Ties (including circular dependencies) are broken alphabetically
+3. A name needed when a `def`/`class` statement runs (decorators, base classes,
+   type annotations) still comes before whatever uses it
+4. Ties (including circular dependencies) are broken alphabetically
 
 ### Methods
 
@@ -55,7 +57,8 @@ Methods within a class follow the same rules:
 
 ### What's Not Sorted
 
-- Top-level code (imports, constants, class definitions) remains in place
+- Top-level code other than functions/classes (imports, constants, `if`/`for`
+  blocks, `__main__` guards) stays in place and anchors the runs around it
 - Nested functions are left untouched
 - Cross-module function calls are ignored
 - Cross-class method calls are ignored
@@ -130,6 +133,6 @@ def helper():
 
 ## Limitations
 
-- Only sorts top-level functions and class methods
+- Only sorts top-level functions/classes and class methods
 - Does not handle complex cross-module dependency analysis
 - Nested functions remain in their original positions

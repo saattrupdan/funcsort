@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (top-down call hierarchy). Roots (functions not called by others) are emitted
   alphabetically, then any remaining functions in cycles.
 
+### Documentation
+
+- Corrected `README.md` and `AGENTS.md` for the callers-before-callees order.
+  Definition-time references (decorators, base classes, type annotations) still
+  precede their users - only the call-time preference reversed. Also fixed the
+  claim that classes are not sorted (they are) and the outdated "no tests" note.
+
 ## [v0.1.2] - 2026-07-27
 
 ### Changed

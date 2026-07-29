@@ -73,7 +73,7 @@ class TestClassMethods:
     """Tests for method sorting within classes."""
 
     def test_caller_method_before_callee_method(self) -> None:
-        """Methods should be sorted by call hierarchy (callees first)."""
+        """Methods should be sorted by call hierarchy (callers first)."""
         code = """class Foo:
     def caller(self):
         return self.callee()
@@ -82,7 +82,7 @@ class TestClassMethods:
         return 42
 """
         result = sort_source(code)
-        assert result.index("def callee") < result.index("def caller")
+        assert result.index("def caller") < result.index("def callee")
 
     def test_init_first(self) -> None:
         """__init__ should always be first in a class."""
@@ -111,8 +111,8 @@ class TestClassMethods:
         return self.b()
 """
         result = sort_source(code)
-        assert result.index("def c") < result.index("def b")
-        assert result.index("def b") < result.index("def a")
+        assert result.index("def a") < result.index("def b")
+        assert result.index("def b") < result.index("def c")
 
     def test_no_self_method_calls(self) -> None:
         """Methods not calling each other should be alphabetical after __init__."""
@@ -369,7 +369,9 @@ def make_wrapper(func):
     return func
 """
         result = sort_source(code)
-        assert result.index("def wrapper") < result.index("def make_wrapper")
+        # make_wrapper calls wrapper (caller first) and decorates target (the
+        # decorator definition is a hard constraint, so it precedes its usage).
+        assert result.index("def make_wrapper") < result.index("def wrapper")
         assert result.index("def make_wrapper") < result.index("def target")
 
     def test_decorator_definition_before_usage(self) -> None:
@@ -428,8 +430,8 @@ def bravo():
         assert result.index("def alpha():") < result.index("def bravo():")
         assert result.index("def bravo():") < result.index("def charlie():")
 
-    def test_callee_before_caller_no_entry(self) -> None:
-        """Without main, callee comes before caller."""
+    def test_caller_before_callee_no_entry(self) -> None:
+        """Without main, caller comes before callee."""
         code = """
 def caller():
     return helper()
@@ -439,7 +441,7 @@ def helper():
     return 42
 """
         result = sort_source(code)
-        assert result.index("def helper():") < result.index("def caller():")
+        assert result.index("def caller():") < result.index("def helper():")
 
     def test_caller_with_entry_point(self) -> None:
         """Entry point (main) is first among functions, even with dependencies."""
@@ -456,7 +458,7 @@ def helper():
         assert result.index("def main():") < result.index("def helper():")
 
     def test_chain_of_calls(self) -> None:
-        """Multi-level call chain: a -> b -> c becomes c, b, a (definitions first)."""
+        """Multi-level call chain: a -> b -> c stays a, b, c (callers first)."""
         code = """
 def c():
     return "c"
@@ -470,8 +472,8 @@ def a():
     return b()
 """
         result = sort_source(code)
-        assert result.index("def c():") < result.index("def b():")
-        assert result.index("def b():") < result.index("def a():")
+        assert result.index("def a():") < result.index("def b():")
+        assert result.index("def b():") < result.index("def c():")
 
     def test_diamond_dependency(self) -> None:
         """Diamond: a calls b and c, both call d."""
@@ -492,11 +494,11 @@ def a():
     return b(), c()
 """
         result = sort_source(code)
-        # d first (called by b,c), then b and c alphabetically, then a
-        assert result.index("def d():") < result.index("def b():")
-        assert result.index("def d():") < result.index("def c():")
-        assert result.index("def b():") < result.index("def a():")
-        assert result.index("def c():") < result.index("def a():")
+        # a is the sole root (nobody calls it), so it leads; its callees follow.
+        assert result.index("def a():") < result.index("def b():")
+        assert result.index("def a():") < result.index("def c():")
+        assert result.index("def a():") < result.index("def d():")
+        assert result.index("def b():") < result.index("def d():")
 
     def test_entry_point_first(self) -> None:
         """main() should appear first even if it has no calls."""
@@ -525,7 +527,7 @@ def main():
         assert result.index("def main():") < result.index("def util():")
 
     def test_underscore_helper_called(self) -> None:
-        """Private helpers should come before their callers."""
+        """Callers come before the private helpers they call."""
         code = """
 def public_function():
     return _private_helper()
@@ -535,8 +537,8 @@ def _private_helper():
     return 42
 """
         result = sort_source(code)
-        assert result.index("def _private_helper():") < result.index(
-            "def public_function():"
+        assert result.index("def public_function():") < result.index(
+            "def _private_helper():"
         )
 
     def test_underscore_helper_uncalled(self) -> None:
