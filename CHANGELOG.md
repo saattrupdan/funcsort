@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.1.3] - 2026-07-29
+
 ### Fixed
 
 - **Corrected sorting order: callers now appear before callees** (was reversed).

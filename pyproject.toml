@@ -1,6 +1,6 @@
 [project]
 name = "funcsort"
-version = "0.1.2"
+version = "0.1.3"
 description = "Automatically sorting Python functions and modules."
 readme = "README.md"
 authors = [
