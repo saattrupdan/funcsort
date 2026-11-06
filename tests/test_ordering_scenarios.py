@@ -286,6 +286,102 @@ SCENARIOS = (
         ("alpha", "zebra"),
     ),
     _Scenario(
+        "external_uppercase_attribute_ignored",
+        (
+            "def a_target():\n    return 1",
+            "def z_caller():\n    return ExternalClass.a_target()",
+        ),
+        ("a_target", "z_caller"),
+    ),
+    _Scenario(
+        "external_attribute_callback_ignored",
+        (
+            "def a_target(value):\n    return value",
+            "def z_caller():\n    return executor.submit(ExternalClass.a_target, 1)",
+        ),
+        ("a_target", "z_caller"),
+    ),
+    _Scenario(
+        "same_named_global_is_not_self_method",
+        (
+            "def A_shared():\n    return 1",
+            "class Worker:\n    def z_caller(self):\n        return self.A_shared()",
+        ),
+        ("A_shared", "Worker", "Worker.z_caller"),
+    ),
+    _Scenario(
+        "self_and_cls_callbacks_are_method_calls",
+        (
+            """class Worker:
+    @classmethod
+    def z_caller(cls):
+        return register(cls.a_target)
+
+    def a_target(self):
+        return 1""",
+        ),
+        ("Worker", "Worker.z_caller", "Worker.a_target"),
+    ),
+    _Scenario(
+        "class_qualified_method_callback",
+        (
+            """class Worker:
+    def z_caller(self):
+        return register(Worker.a_target)
+
+    def a_target(self):
+        return 1""",
+        ),
+        ("Worker", "Worker.z_caller", "Worker.a_target"),
+    ),
+    _Scenario(
+        "parameter_shadow_hides_callback_name",
+        (
+            "def a_target(value):\n    return value",
+            "def z_caller(a_target):\n    return register(a_target)",
+        ),
+        ("a_target", "z_caller"),
+    ),
+    _Scenario(
+        "method_parameter_shadow_hides_callback_name",
+        (
+            """class Worker:
+    def z_caller(self, a_target):
+        return register(a_target)
+
+    def a_target(self):
+        return 1""",
+        ),
+        ("Worker", "Worker.a_target", "Worker.z_caller"),
+    ),
+    _Scenario(
+        "local_assignment_shadow_hides_callback_name",
+        (
+            "def a_target(value):\n    return value",
+            "def z_caller():\n    a_target = object()\n    return register(a_target)",
+        ),
+        ("a_target", "z_caller"),
+    ),
+    _Scenario(
+        "local_import_shadow_hides_call_name",
+        (
+            "def a_target():\n    return 1",
+            "def z_caller():\n    import external as a_target\n    return a_target()",
+        ),
+        ("a_target", "z_caller"),
+    ),
+    _Scenario(
+        "nested_scope_calls_do_not_leak",
+        (
+            "def a_target():\n    return 1",
+            """def z_caller():
+    def nested():
+        return a_target()
+    return 2""",
+        ),
+        ("a_target", "z_caller"),
+    ),
+    _Scenario(
         "nested_function_order_preserved",
         (
             """def outer():
@@ -345,6 +441,30 @@ SCENARIOS = (
         permute=False,
     ),
 )
+
+
+def _definition_runs(nodes: list[ast.stmt]) -> list[ast.stmt]:
+    """Canonicalise reorderable definition runs without changing nested bodies.
+
+    Returns:
+        Nodes with only contiguous definition runs canonicalised.
+    """
+    result: list[ast.stmt] = []
+    run: list[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef] = []
+
+    def flush() -> None:
+        # Stable name sorting retains the relative order of duplicate definitions.
+        result.extend(sorted(run, key=lambda node: node.name))
+        run.clear()
+
+    for node in nodes:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            run.append(node)
+        else:
+            flush()
+            result.append(node)
+    flush()
+    return result
 
 
 def test_module_statements_anchor_definition_runs() -> None:
@@ -454,27 +574,3 @@ def _source(blocks: tuple[str, ...]) -> str:
         A compilable module assembled from the supplied blocks.
     """
     return "\n\n\n".join(blocks) + "\n"
-
-
-def _definition_runs(nodes: list[ast.stmt]) -> list[ast.stmt]:
-    """Canonicalise reorderable definition runs without changing nested bodies.
-
-    Returns:
-        Nodes with only contiguous definition runs canonicalised.
-    """
-    result: list[ast.stmt] = []
-    run: list[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef] = []
-
-    def flush() -> None:
-        # Stable name sorting retains the relative order of duplicate definitions.
-        result.extend(sorted(run, key=lambda node: node.name))
-        run.clear()
-
-    for node in nodes:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            run.append(node)
-        else:
-            flush()
-            result.append(node)
-    flush()
-    return result
