@@ -18,7 +18,6 @@ class _Scenario:
     blocks: tuple[str, ...]
     expected: tuple[str, ...]
     permute: bool = True
-    xfail: str | None = None
 
 
 SCENARIOS = (
@@ -40,7 +39,6 @@ SCENARIOS = (
             "def main():\n    load()\n    save()",
         ),
         ("main", "load", "save", "parse"),
-        xfail="Confirmed sibling order is not met.",
     ),
     _Scenario(
         "independent_alpha_beta",
@@ -51,7 +49,6 @@ SCENARIOS = (
             "def beta():\n    return beta_helper()",
         ),
         ("alpha", "beta", "alpha_helper", "beta_helper"),
-        xfail="Confirmed independent-root order is not met.",
     ),
     _Scenario(
         "shared_helper_unequal_depths",
@@ -63,7 +60,6 @@ SCENARIOS = (
             "def main():\n    shallow()\n    branch()",
         ),
         ("main", "branch", "shallow", "deep", "shared"),
-        xfail="Confirmed breadth order is not met.",
     ),
     _Scenario(
         "diamond",
@@ -74,7 +70,6 @@ SCENARIOS = (
             "def start():\n    left()\n    right()",
         ),
         ("start", "left", "right", "finish"),
-        xfail="Confirmed sibling order is not met.",
     ),
     _Scenario(
         "three_level_siblings",
@@ -85,7 +80,6 @@ SCENARIOS = (
             "def root():\n    branch()\n    sibling()",
         ),
         ("root", "branch", "sibling", "deep"),
-        xfail="Confirmed sibling order is not met.",
     ),
     _Scenario(
         "alphabetical_independent_roots",
@@ -129,7 +123,6 @@ SCENARIOS = (
             "def alpha():\n    return gamma()",
         ),
         ("alpha", "beta", "gamma"),
-        xfail="Confirmed alphabetical cycle order is not met.",
     ),
     _Scenario(
         "async_await_chain",
@@ -157,7 +150,6 @@ SCENARIOS = (
         self.work()""",
         ),
         ("Worker", "Worker.__init__", "Worker.unused", "Worker.work", "Worker.finish"),
-        xfail="Confirmed method roots precede helpers.",
     ),
     _Scenario(
         "class_method_chain",
@@ -181,7 +173,6 @@ SCENARIOS = (
             "def zebra(values):\n    return sorted(values, key=alpha)",
         ),
         ("zebra", "alpha"),
-        xfail="Confirmed callback dependency is not ordered yet.",
     ),
     _Scenario(
         "callback_map",
@@ -190,7 +181,6 @@ SCENARIOS = (
             "def zebra(values):\n    return map(alpha, values)",
         ),
         ("zebra", "alpha"),
-        xfail="Confirmed callback dependency is not ordered yet.",
     ),
     _Scenario(
         "callback_executor",
@@ -199,7 +189,6 @@ SCENARIOS = (
             "def zebra(executor):\n    return executor.submit(alpha, 1)",
         ),
         ("zebra", "alpha"),
-        xfail="Confirmed callback dependency is not ordered yet.",
     ),
     _Scenario(
         "default_factory_safety",
@@ -295,7 +284,6 @@ SCENARIOS = (
             "def zebra(service):\n    return service.alpha()",
         ),
         ("alpha", "zebra"),
-        xfail="External attribute calls incorrectly match local definition names.",
     ),
     _Scenario(
         "nested_function_order_preserved",
@@ -346,7 +334,6 @@ SCENARIOS = (
             "def unused():\n    return 2",
         ),
         ("alpha", "unused", "helper"),
-        xfail="Confirmed roots precede helper definitions.",
     ),
     _Scenario(
         "decorated_class_method",
@@ -416,10 +403,35 @@ def test_scenario_invariants(scenario: _Scenario) -> None:
         assert sort_source(sorted_source) == sorted_source, (scenario.name, arrangement)
 
 
+@pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda case: case.name)
+def test_scenario_order(scenario: _Scenario) -> None:
+    """Check full definition order over all safe input permutations."""
+    for arrangement in _arrangements(scenario):
+        source = _source(arrangement)
+        compile(source, f"<scenario:{scenario.name}:input>", "exec")
+        actual = _definition_order(sort_source(source))
+        assert actual == scenario.expected, (scenario.name, arrangement, actual)
+
+
 def _arrangements(scenario: _Scenario) -> t.Iterable[tuple[str, ...]]:
     if scenario.permute:
         return itertools.permutations(scenario.blocks)
     return (scenario.blocks,)
+
+
+def _definition_order(source: str) -> tuple[str, ...]:
+    """Return ordered module and class definition names, retaining duplicates."""
+    result: list[str] = []
+    for node in ast.parse(source).body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            result.append(node.name)
+            if isinstance(node, ast.ClassDef):
+                result.extend(
+                    f"{node.name}.{member.name}"
+                    for member in node.body
+                    if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef))
+                )
+    return tuple(result)
 
 
 def _normalised_ast(source: str) -> str:
@@ -433,6 +445,15 @@ def _normalised_ast(source: str) -> str:
 
     normalise_scope(tree)
     return ast.dump(tree, include_attributes=False)
+
+
+def _source(blocks: tuple[str, ...]) -> str:
+    """Join complete definitions and explicitly anchored statements.
+
+    Returns:
+        A compilable module assembled from the supplied blocks.
+    """
+    return "\n\n\n".join(blocks) + "\n"
 
 
 def _definition_runs(nodes: list[ast.stmt]) -> list[ast.stmt]:
@@ -457,51 +478,3 @@ def _definition_runs(nodes: list[ast.stmt]) -> list[ast.stmt]:
             result.append(node)
     flush()
     return result
-
-
-def _source(blocks: tuple[str, ...]) -> str:
-    """Join complete definitions and explicitly anchored statements.
-
-    Returns:
-        A compilable module assembled from the supplied blocks.
-    """
-    return "\n\n\n".join(blocks) + "\n"
-
-
-@pytest.mark.parametrize(
-    "scenario",
-    [
-        pytest.param(
-            case,
-            marks=pytest.mark.xfail(
-                reason=case.xfail, strict=True, raises=AssertionError
-            ),
-        )
-        if case.xfail
-        else case
-        for case in SCENARIOS
-    ],
-    ids=lambda case: case.name,
-)
-def test_scenario_order(scenario: _Scenario) -> None:
-    """Check full definition order over all safe input permutations."""
-    for arrangement in _arrangements(scenario):
-        source = _source(arrangement)
-        compile(source, f"<scenario:{scenario.name}:input>", "exec")
-        actual = _definition_order(sort_source(source))
-        assert actual == scenario.expected, (scenario.name, arrangement, actual)
-
-
-def _definition_order(source: str) -> tuple[str, ...]:
-    """Return ordered module and class definition names, retaining duplicates."""
-    result: list[str] = []
-    for node in ast.parse(source).body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            result.append(node.name)
-            if isinstance(node, ast.ClassDef):
-                result.extend(
-                    f"{node.name}.{member.name}"
-                    for member in node.body
-                    if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef))
-                )
-    return tuple(result)

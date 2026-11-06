@@ -32,8 +32,30 @@ def call_refs(node: cst.CSTNode) -> set[str]:
         func = call.func
         if isinstance(func, cst.Name):
             names.add(func.value)
-        elif isinstance(func, cst.Attribute) and isinstance(func.attr, cst.Name):
+        elif (
+            isinstance(func, cst.Attribute)
+            and isinstance(func.value, cst.Name)
+            and (func.value.value in {"self", "cls"} or func.value.value[:1].isupper())
+        ):
             names.add(func.attr.value)
+        for argument in call.args:
+            if isinstance(argument.value, cst.Name):
+                names.add(argument.value.value)
+    if isinstance(node, cst.FunctionDef):
+        params = node.params
+        shadowed = {
+            parameter.name.value
+            for parameter in (
+                *params.posonly_params,
+                *params.params,
+                *params.kwonly_params,
+            )
+        }
+        if isinstance(params.star_arg, cst.Param):
+            shadowed.add(params.star_arg.name.value)
+        if isinstance(params.star_kwarg, cst.Param):
+            shadowed.add(params.star_kwarg.name.value)
+        names.difference_update(shadowed)
     return names
 
 
