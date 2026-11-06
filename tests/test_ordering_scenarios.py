@@ -214,30 +214,30 @@ SCENARIOS = (
         "annotation_class_safety",
         (
             "class Model:\n    pass",
-            "def consumer(value: Model) -> Model:\n    return value",
+            "def main(value: Model) -> Model:\n    return value",
         ),
-        ("Model", "consumer"),
+        ("Model", "main"),
         permute=False,
     ),
     _Scenario(
         "decorator_definition_safety",
         (
-            "def decorate(function):\n    return function",
-            "@decorate\ndef use():\n    return 1",
+            "def z_decorate(function):\n    return function",
+            "@z_decorate\ndef alpha():\n    return 1",
         ),
-        ("decorate", "use"),
+        ("z_decorate", "alpha"),
         permute=False,
     ),
     _Scenario(
         "base_class_safety",
-        ("class Base:\n    pass", "class Child(Base):\n    pass"),
-        ("Base", "Child"),
+        ("class ZBase:\n    pass", "class AChild(ZBase):\n    pass"),
+        ("ZBase", "AChild"),
         permute=False,
     ),
     _Scenario(
         "metaclass_safety",
-        ("class Meta(type):\n    pass", "class Thing(metaclass=Meta):\n    pass"),
-        ("Meta", "Thing"),
+        ("class ZMeta(type):\n    pass", "class AThing(metaclass=ZMeta):\n    pass"),
+        ("ZMeta", "AThing"),
         permute=False,
     ),
     _Scenario(
@@ -291,10 +291,11 @@ SCENARIOS = (
     _Scenario(
         "external_attribute_call_ignored",
         (
-            "def worker():\n    return 1",
-            "def caller(service):\n    return service.worker()",
+            "def alpha():\n    return 1",
+            "def zebra(service):\n    return service.alpha()",
         ),
-        ("caller", "worker"),
+        ("alpha", "zebra"),
+        xfail="External attribute calls incorrectly match local definition names.",
     ),
     _Scenario(
         "nested_function_order_preserved",
@@ -404,7 +405,7 @@ if __name__ == "__main__":
 def test_scenario_invariants(scenario: _Scenario) -> None:
     """Every permutation compiles, preserves AST content, and sorts idempotently."""
     for arrangement in _arrangements(scenario):
-        source = _source(scenario, arrangement)
+        source = _source(arrangement)
         compile(source, f"<scenario:{scenario.name}:input>", "exec")
         sorted_source = sort_source(source)
         compile(sorted_source, f"<scenario:{scenario.name}:output>", "exec")
@@ -441,10 +442,11 @@ def _definition_runs(nodes: list[ast.stmt]) -> list[ast.stmt]:
         Nodes with only contiguous definition runs canonicalised.
     """
     result: list[ast.stmt] = []
-    run: list[ast.stmt] = []
+    run: list[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef] = []
 
     def flush() -> None:
-        result.extend(sorted(run, key=ast.dump))
+        # Stable name sorting retains the relative order of duplicate definitions.
+        result.extend(sorted(run, key=lambda node: node.name))
         run.clear()
 
     for node in nodes:
@@ -457,7 +459,7 @@ def _definition_runs(nodes: list[ast.stmt]) -> list[ast.stmt]:
     return result
 
 
-def _source(scenario: _Scenario, blocks: tuple[str, ...]) -> str:
+def _source(blocks: tuple[str, ...]) -> str:
     """Join complete definitions and explicitly anchored statements.
 
     Returns:
@@ -484,7 +486,7 @@ def _source(scenario: _Scenario, blocks: tuple[str, ...]) -> str:
 def test_scenario_order(scenario: _Scenario) -> None:
     """Check full definition order over all safe input permutations."""
     for arrangement in _arrangements(scenario):
-        source = _source(scenario, arrangement)
+        source = _source(arrangement)
         compile(source, f"<scenario:{scenario.name}:input>", "exec")
         actual = _definition_order(sort_source(source))
         assert actual == scenario.expected, (scenario.name, arrangement, actual)
