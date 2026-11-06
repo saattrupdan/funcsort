@@ -179,7 +179,9 @@ def _sort_classes[NodeT: cst.CSTNode](node: NodeT) -> NodeT:
 
     if isinstance(node, cst.ClassDef) and isinstance(node.body, cst.IndentedBlock):
         old_body = list(node.body.body)
-        new_body = _reorder(old_body, entry_name="__init__", blank_count=1)
+        new_body = _reorder(
+            old_body, entry_name="__init__", blank_count=1, class_name=node.name.value
+        )
         if not _same_sequence(old_body, new_body):
             block = node.body.with_changes(body=tuple(new_body))
             node = node.with_changes(body=block)
@@ -187,7 +189,10 @@ def _sort_classes[NodeT: cst.CSTNode](node: NodeT) -> NodeT:
 
 
 def _reorder(
-    nodes: Sequence[cst.BaseStatement], entry_name: str, blank_count: int
+    nodes: Sequence[cst.BaseStatement],
+    entry_name: str,
+    blank_count: int,
+    class_name: str | None = None,
 ) -> list[cst.BaseStatement]:
     """Reorder each run of consecutive definitions, keeping anchors in place.
 
@@ -195,6 +200,7 @@ def _reorder(
         nodes: The statements of a module or class body, in order.
         entry_name: Entry point name to prioritise within a run.
         blank_count: Blank lines between definitions when a run is reordered.
+        class_name (optional): Enclosing class for method call analysis.
 
     Returns:
         The statements with each definition-run sorted; non-definitions untouched.
@@ -210,7 +216,15 @@ def _reorder(
             run.append(node)
             i += 1
         if run:
-            result.extend(_sort_run(run, entry_name, blank_count, at_start=start == 0))
+            result.extend(
+                _sort_run(
+                    run,
+                    entry_name,
+                    blank_count,
+                    at_start=start == 0,
+                    class_name=class_name,
+                )
+            )
         else:
             result.append(nodes[i])
             i += 1
@@ -223,7 +237,11 @@ def _same_sequence(a: Sequence[cst.CSTNode], b: Sequence[cst.CSTNode]) -> bool:
 
 
 def _sort_run(
-    run: list[Definition], entry_name: str, blank_count: int, at_start: bool
+    run: list[Definition],
+    entry_name: str,
+    blank_count: int,
+    at_start: bool,
+    class_name: str | None,
 ) -> list[Definition]:
     """Sort a single run of consecutive function/class definitions.
 
@@ -232,6 +250,7 @@ def _sort_run(
         entry_name: Entry point name to prioritise.
         blank_count: Blank lines between definitions.
         at_start: Whether this run is the first thing in its body.
+        class_name: Enclosing class for method call analysis, or ``None``.
 
     Returns:
         The (possibly reordered) definition nodes, with normalised spacing.
@@ -250,7 +269,7 @@ def _sort_run(
         for idx, node in enumerate(run):
             for name in def_time_refs(node) & members:
                 hard[idx].update(j for j in name_to_indices[name] if j != idx)
-            for name in call_refs(node) & members:
+            for name in call_refs(node, enclosing_class=class_name) & members:
                 soft[idx].update(j for j in name_to_indices[name] if j != idx)
 
         # Keep definitions that share a name (e.g. a property and its setter) in
