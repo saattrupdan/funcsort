@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Order callers and helpers by dependency level, including callbacks and recursive
+  groups, while preserving definition-time safety and ignoring external calls;
+  expand regression coverage for ordering and code preservation.
+
 ## [v0.1.3] - 2026-07-29
 
 ### Fixed
