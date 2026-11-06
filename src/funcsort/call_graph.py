@@ -6,6 +6,7 @@ import libcst as cst
 from libcst.metadata import (
     Assignment,
     BuiltinScope,
+    ComprehensionScope,
     GlobalScope,
     MetadataWrapper,
     Scope,
@@ -31,8 +32,9 @@ def call_refs(
     """
     wrapper = MetadataWrapper(cst.Module(body=tuple(nodes)))
     scopes = wrapper.resolve(ScopeProvider)
+    local_bindings = _missing_local_bindings(wrapper.module, scopes)
     return [
-        _definition_refs(definition, scopes, enclosing_class)
+        _definition_refs(definition, scopes, local_bindings, enclosing_class)
         for definition in wrapper.module.body
     ]
 
@@ -71,6 +73,7 @@ def def_time_refs(node: cst.CSTNode) -> set[str]:
 def _definition_refs(
     definition: cst.BaseStatement,
     scopes: c.Mapping[cst.CSTNode, Scope],
+    local_bindings: c.Mapping[Scope, frozenset[str]],
     enclosing_class: str | None,
 ) -> set[str]:
     """Extract runtime edges from one definition using shared lexical metadata.
@@ -78,6 +81,7 @@ def _definition_refs(
     Args:
         definition: Definition in a module or method run.
         scopes: Lexical scope metadata resolved once for the entire run.
+        local_bindings: Pattern and comprehension bindings missing from LibCST metadata.
         enclosing_class: Containing class for a method run, or ``None``.
 
     Returns:
@@ -86,7 +90,11 @@ def _definition_refs(
     if isinstance(definition, cst.FunctionDef):
         receiver = _method_receiver(definition) if enclosing_class else None
         return _runtime_refs(
-            definition.body, scopes, class_name=enclosing_class, receiver=receiver
+            definition.body,
+            scopes,
+            local_bindings,
+            class_name=enclosing_class,
+            receiver=receiver,
         )
 
     if not isinstance(definition, cst.ClassDef):
@@ -98,8 +106,43 @@ def _definition_refs(
         runtime = (
             statement.body if isinstance(statement, cst.FunctionDef) else statement
         )
-        names.update(_runtime_refs(runtime, scopes))
+        names.update(_runtime_refs(runtime, scopes, local_bindings))
     return names
+
+
+def _missing_local_bindings(
+    module: cst.Module, scopes: c.Mapping[cst.CSTNode, Scope]
+) -> dict[Scope, frozenset[str]]:
+    """Supplement scope metadata for pattern captures and comprehension walruses.
+
+    Args:
+        module: Module whose references are being resolved.
+        scopes: LibCST lexical scopes for the module.
+
+    Returns:
+        Names omitted by ScopeProvider, keyed by their owning lexical scope.
+    """
+    bindings: dict[Scope, set[str]] = {}
+    for node in walk(module):
+        capture: cst.Name | None = None
+        if isinstance(node, (cst.MatchAs, cst.MatchStar)):
+            capture = node.name if isinstance(node.name, cst.Name) else None
+        elif isinstance(node, cst.MatchMapping):
+            capture = node.rest if isinstance(node.rest, cst.Name) else None
+        if capture is not None:
+            owner = scopes.get(node)
+            if owner is not None:
+                bindings.setdefault(owner, set()).add(capture.value)
+        elif isinstance(node, cst.NamedExpr):
+            owner = scopes.get(node.target)
+            if isinstance(owner, ComprehensionScope) and isinstance(
+                node.target, cst.Name
+            ):
+                while isinstance(owner, ComprehensionScope):
+                    owner = owner.parent
+                if owner is not None:
+                    bindings.setdefault(owner, set()).add(node.target.value)
+    return {scope: frozenset(names) for scope, names in bindings.items()}
 
 
 def _signature_names(func: cst.FunctionDef) -> set[str]:
@@ -155,6 +198,7 @@ def _method_receiver(function: cst.FunctionDef) -> cst.Param | None:
 def _runtime_refs(
     node: cst.CSTNode,
     scopes: c.Mapping[cst.CSTNode, Scope],
+    local_bindings: c.Mapping[Scope, frozenset[str]],
     class_name: str | None = None,
     receiver: cst.Param | None = None,
 ) -> set[str]:
@@ -163,6 +207,7 @@ def _runtime_refs(
     Args:
         node: Body or statement evaluated in the current scope.
         scopes: LibCST's lexical scope metadata for the enclosing definition.
+        local_bindings: Pattern and comprehension bindings missing from LibCST metadata.
         class_name (optional): Class whose qualified methods are being ordered.
         receiver (optional): Instance or class parameter of the current method.
 
@@ -176,12 +221,16 @@ def _runtime_refs(
         expressions = [current.func, *(argument.value for argument in current.args)]
         for expression in expressions:
             if class_name is None:
-                if isinstance(expression, cst.Name) and _is_global(expression, scopes):
+                if isinstance(expression, cst.Name) and _is_global(
+                    expression, scopes, local_bindings
+                ):
                     names.add(expression.value)
             elif (
                 isinstance(expression, cst.Attribute)
                 and isinstance(expression.value, cst.Name)
-                and _is_method_receiver(expression.value, scopes, class_name, receiver)
+                and _is_method_receiver(
+                    expression.value, scopes, local_bindings, class_name, receiver
+                )
             ):
                 names.add(expression.attr.value)
     return names
@@ -204,6 +253,7 @@ def collect_names(node: cst.CSTNode | None) -> set[str]:
 def _is_method_receiver(
     name: cst.Name,
     scopes: c.Mapping[cst.CSTNode, Scope],
+    local_bindings: c.Mapping[Scope, frozenset[str]],
     class_name: str,
     receiver: cst.Param | None,
 ) -> bool:
@@ -212,6 +262,7 @@ def _is_method_receiver(
     Args:
         name: Receiver of a qualified call or callback expression.
         scopes: Lexical scope metadata for the enclosing definition.
+        local_bindings: Pattern and comprehension bindings missing from LibCST metadata.
         class_name: Class whose methods are being sorted.
         receiver: Method's instance or class parameter, if present.
 
@@ -219,7 +270,7 @@ def _is_method_receiver(
         Whether the expression refers to this class or its method receiver.
     """
     if name.value == class_name:
-        return _is_global(name, scopes)
+        return _is_global(name, scopes, local_bindings)
     if receiver is None or name.value != receiver.name.value:
         return False
     scope = scopes.get(name)
@@ -260,12 +311,17 @@ def _runtime_nodes(node: cst.CSTNode) -> c.Iterator[cst.CSTNode]:
                 stack.extend(item for item in value if isinstance(item, cst.CSTNode))
 
 
-def _is_global(name: cst.Name, scopes: c.Mapping[cst.CSTNode, Scope]) -> bool:
+def _is_global(
+    name: cst.Name,
+    scopes: c.Mapping[cst.CSTNode, Scope],
+    local_bindings: c.Mapping[Scope, frozenset[str]],
+) -> bool:
     """Check that a bare name is not bound in a local lexical scope.
 
     Args:
         name: Name expression being resolved.
         scopes: Lexical scope metadata for the enclosing definition.
+        local_bindings: Pattern and comprehension bindings missing from LibCST metadata.
 
     Returns:
         Whether resolution can refer to a module-level definition.
@@ -273,6 +329,13 @@ def _is_global(name: cst.Name, scopes: c.Mapping[cst.CSTNode, Scope]) -> bool:
     scope = scopes.get(name)
     if scope is None:
         return False
+    current: Scope | None = scope
+    while current is not None and not isinstance(current, GlobalScope):
+        if name.value in local_bindings.get(current, frozenset()):
+            overwritten_scope = getattr(current, "_scope_overwrites", {})
+            if name.value not in overwritten_scope:
+                return False
+        current = current.parent
     # The wrapper contains one definition, so unresolved/builtin names may refer
     # to another definition in the caller's module run.
     return all(

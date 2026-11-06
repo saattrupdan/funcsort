@@ -576,6 +576,66 @@ SCENARIOS = (
         ("z_caller", "a_target"),
     ),
     _Scenario(
+        "match_capture_does_not_shadow_global_callback",
+        (
+            "def a_target():\n    return 1",
+            """def z_caller(value):
+    match value:
+        case a_target:
+            return register(a_target)
+    return None""",
+        ),
+        ("a_target", "z_caller"),
+        permute=False,
+    ),
+    _Scenario(
+        "match_capture_pattern_forms_shadow_globals",
+        (
+            "def a_alias():\n    return 1",
+            "def a_mapping():\n    return 1",
+            "def a_or():\n    return 1",
+            "def a_rest():\n    return 1",
+            "def a_sequence():\n    return 1",
+            "def a_star():\n    return 1",
+            """def z_caller(value):
+    match value:
+        case [a_sequence, *a_star] as a_alias:
+            register(a_sequence, a_star, a_alias)
+        case {"key": a_mapping, **a_rest}:
+            register(a_mapping, a_rest)
+        case (a_or, 0) | (a_or, 1):
+            register(a_or)""",
+        ),
+        ("a_alias", "a_mapping", "a_or", "a_rest", "a_sequence", "a_star", "z_caller"),
+        permute=False,
+    ),
+    _Scenario(
+        "comprehension_walrus_does_not_shadow_global_callback",
+        (
+            "def a_target():\n    return 1",
+            """def z_caller(values):
+    [(a_target := callback) for callback in values]
+    return register(a_target)""",
+        ),
+        ("a_target", "z_caller"),
+        permute=False,
+    ),
+    _Scenario(
+        "match_capture_does_not_create_class_receiver_edge",
+        (
+            """class Worker:
+    def z_caller(self, value):
+        match value:
+            case Worker:
+                Worker.a_target()
+
+    def a_target(self):
+        return None""",
+        ),
+        ("Worker", "Worker.a_target", "Worker.z_caller"),
+        permute=False,
+    ),
+    _Scenario(
         "shadowed_class_receiver_is_external",
         (
             """class Worker:
@@ -599,9 +659,15 @@ def _definition_runs(nodes: list[ast.stmt]) -> list[ast.stmt]:
     result: list[ast.stmt] = []
     run: list[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef] = []
 
+    def definition_name(
+        node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
+    ) -> str:
+        """Return a definition's name for stable canonical ordering."""
+        return node.name
+
     def flush() -> None:
         # Stable name sorting retains the relative order of duplicate definitions.
-        result.extend(sorted(run, key=lambda node: node.name))
+        result.extend(sorted(run, key=definition_name))
         run.clear()
 
     for node in nodes:
