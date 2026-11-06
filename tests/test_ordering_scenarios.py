@@ -647,6 +647,33 @@ SCENARIOS = (
         ),
         ("Worker", "Worker.a_target", "Worker.z_caller"),
     ),
+    _Scenario(
+        "pattern_capture_shadows_instance_receiver",
+        (
+            """class Worker:
+    def a_target(self):
+        return 1
+
+    def z_caller(self, value):
+        match value:
+            case self:
+                return self.a_target()""",
+        ),
+        ("Worker", "Worker.a_target", "Worker.z_caller"),
+    ),
+    _Scenario(
+        "comprehension_walrus_shadows_instance_receiver",
+        (
+            """class Worker:
+    def a_target(self):
+        return 1
+
+    def z_caller(self, values):
+        [(self := value) for value in values]
+        return self.a_target()""",
+        ),
+        ("Worker", "Worker.a_target", "Worker.z_caller"),
+    ),
 )
 
 

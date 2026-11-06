@@ -278,7 +278,9 @@ def _is_method_receiver(
         return False
     assignments = scope[name.value]
     return bool(assignments) and all(
-        isinstance(assignment, Assignment) and assignment.node is receiver
+        isinstance(assignment, Assignment)
+        and assignment.node is receiver
+        and name.value not in local_bindings.get(assignment.scope, frozenset())
         for assignment in assignments
     )
 
