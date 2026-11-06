@@ -266,10 +266,11 @@ def _sort_run(
 
         hard: list[set[int]] = [set() for _ in run]
         soft: list[set[int]] = [set() for _ in run]
+        runtime_refs = call_refs(run, enclosing_class=class_name)
         for idx, node in enumerate(run):
             for name in def_time_refs(node) & members:
                 hard[idx].update(j for j in name_to_indices[name] if j != idx)
-            for name in call_refs(node, enclosing_class=class_name) & members:
+            for name in runtime_refs[idx] & members:
                 soft[idx].update(j for j in name_to_indices[name] if j != idx)
 
         # Keep definitions that share a name (e.g. a property and its setter) in

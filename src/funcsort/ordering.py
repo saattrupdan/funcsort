@@ -1,6 +1,11 @@
 """Order a run of function/class definitions by call hierarchy, safely."""
 
 
+def _key(names: list[str], idx: int) -> tuple[str, int]:
+    """Return a stable alphabetical key."""
+    return names[idx], idx
+
+
 def order_run(
     names: list[str],
     hard: list[set[int]],
@@ -93,11 +98,6 @@ def _components(graph: list[set[int]]) -> list[list[int]]:
         if indices[node] == -1:
             visit(node)
     return components
-
-
-def _key(names: list[str], idx: int) -> tuple[str, int]:
-    """Return a stable alphabetical key."""
-    return names[idx], idx
 
 
 def _respect_hard_dependencies(preferred: list[int], hard: list[set[int]]) -> list[int]:

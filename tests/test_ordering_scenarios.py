@@ -440,6 +440,153 @@ SCENARIOS = (
         ("decorate", "Worker", "Worker.run"),
         permute=False,
     ),
+    _Scenario(
+        "method_parameter_does_not_hide_qualified_call",
+        (
+            """class Worker:
+    def a_target(self, value):
+        return value
+
+    def z_caller(self, a_target):
+        return self.a_target(a_target)""",
+        ),
+        ("Worker", "Worker.z_caller", "Worker.a_target"),
+    ),
+    _Scenario(
+        "global_callback_does_not_refer_to_sibling_method",
+        (
+            "def a_target(value):\n    return value",
+            """class Worker:
+    def z_caller(self):
+        return register(a_target)
+
+    def a_target(self):
+        return 1""",
+        ),
+        ("Worker", "Worker.a_target", "Worker.z_caller", "a_target"),
+    ),
+    _Scenario(
+        "attribute_assignment_does_not_bind_global_name",
+        (
+            "def a_target():\n    return 1",
+            "def z_caller(obj):\n    obj.a_target = 2\n    return a_target()",
+        ),
+        ("z_caller", "a_target"),
+    ),
+    _Scenario(
+        "subscript_assignment_does_not_bind_index_name",
+        (
+            "def a_target():\n    return 1",
+            "def z_caller(obj):\n    obj[a_target] = 2\n    return a_target()",
+        ),
+        ("z_caller", "a_target"),
+    ),
+    _Scenario(
+        "nested_definition_shadows_global_callback",
+        (
+            "def a_target(value):\n    return value",
+            """def z_caller(values):
+    def a_target(value):
+        return value
+    return sorted(values, key=a_target)""",
+        ),
+        ("a_target", "z_caller"),
+    ),
+    _Scenario(
+        "nested_class_shadows_global_callback",
+        (
+            "def a_target(value):\n    return value",
+            """def z_caller():
+    class a_target:
+        pass
+    return register(a_target)""",
+        ),
+        ("a_target", "z_caller"),
+    ),
+    _Scenario(
+        "loop_binding_shadows_global_callback",
+        (
+            "def a_target(value):\n    return value",
+            """def z_caller(callbacks):
+    for a_target in callbacks:
+        register(a_target)""",
+        ),
+        ("a_target", "z_caller"),
+    ),
+    _Scenario(
+        "with_binding_shadows_global_callback",
+        (
+            "def a_target(value):\n    return value",
+            """def z_caller(context):
+    with context as a_target:
+        register(a_target)""",
+        ),
+        ("a_target", "z_caller"),
+    ),
+    _Scenario(
+        "exception_binding_shadows_global_callback",
+        (
+            "def a_target(value):\n    return value",
+            """def z_caller():
+    try:
+        execute()
+    except ValueError as a_target:
+        register(a_target)""",
+        ),
+        ("a_target", "z_caller"),
+    ),
+    _Scenario(
+        "comprehension_binding_shadows_global_callback",
+        (
+            "def a_target(value):\n    return value",
+            """def z_caller(callbacks):
+    return [register(a_target) for a_target in callbacks]""",
+        ),
+        ("a_target", "z_caller"),
+    ),
+    _Scenario(
+        "comprehension_binding_does_not_leak",
+        (
+            "def a_target():\n    return 1",
+            """def z_caller(callbacks):
+    results = [register(a_target) for a_target in callbacks]
+    return a_target(), results""",
+        ),
+        ("z_caller", "a_target"),
+    ),
+    _Scenario(
+        "named_expression_shadows_global_callback",
+        (
+            "def a_target(value):\n    return value",
+            """def z_caller(callback):
+    if (a_target := callback):
+        return register(a_target)
+    return None""",
+        ),
+        ("a_target", "z_caller"),
+    ),
+    _Scenario(
+        "global_declaration_keeps_global_dependency",
+        (
+            "def a_target():\n    return 1",
+            """def z_caller():
+    global a_target
+    return a_target()""",
+        ),
+        ("z_caller", "a_target"),
+    ),
+    _Scenario(
+        "shadowed_class_receiver_is_external",
+        (
+            """class Worker:
+    def z_caller(self, Worker):
+        return Worker.a_target()
+
+    def a_target(self):
+        return 1""",
+        ),
+        ("Worker", "Worker.a_target", "Worker.z_caller"),
+    ),
 )
 
 
