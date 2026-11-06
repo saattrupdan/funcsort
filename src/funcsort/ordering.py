@@ -1,8 +1,4 @@
-"""Order a run of function/class definitions by call hierarchy, safely.
-
-The ordering works on indices (not names) so that definitions sharing a name -
-for example a property and its setter - are handled correctly.
-"""
+"""Order a run of function/class definitions by call hierarchy, safely."""
 
 
 def order_run(
@@ -11,112 +7,122 @@ def order_run(
     soft: list[set[int]],
     entry_name: str | None = None,
 ) -> list[int]:
-    """Return a safe ordering of a run of definitions.
+    """Return a safe, level-based caller-before-callee ordering.
 
-    Definition-time dependencies (``hard``) are strict: a definition never appears
-    before something it needs at definition time. Within that constraint, the call
-    hierarchy (``soft``) is used as a preference - callers before callees, with the
-    entry point first - and ties break alphabetically then by original position.
+    Definition-time dependencies are strict. Call-time dependencies determine
+    breadth-first levels; members of a recursive component are alphabetical.
 
     Args:
         names: Definition names, in original order.
-        hard: ``hard[i]`` is the set of indices that must precede ``i``.
-        soft: ``soft[i]`` is the set of indices ``i`` calls (callees).
+        hard: ``hard[i]`` contains definitions required before ``i``.
+        soft: ``soft[i]`` contains definitions called by ``i``.
         entry_name: Optional entry point name (``main`` or ``__init__``).
 
     Returns:
-        A permutation of ``range(len(names))``.
+        A permutation of the definition indices.
     """
     n = len(names)
     if n <= 1:
         return list(range(n))
 
-    preferred = _preferred_order(names, soft, entry_name)
+    components = _components(soft)
+    component_of = [0] * n
+    for component_idx, component in enumerate(components):
+        for node in component:
+            component_of[node] = component_idx
 
-    # Stable topological sort: walk the preferred order, emitting the first index
-    # whose hard dependencies are all satisfied. On a cycle, fall back to the next
-    # preferred index so the original relative order is kept.
-    emitted = [False] * n
+    # Condense recursive call groups, then order the resulting DAG by depth.
+    callers: list[set[int]] = [set() for _ in components]
+    for caller, callees in enumerate(soft):
+        for callee in callees:
+            source = component_of[caller]
+            target = component_of[callee]
+            if source != target:
+                callers[target].add(source)
+
+    level = [0] * len(components)
+    remaining = set(range(len(components)))
+    while remaining:
+        ready = [idx for idx in remaining if not (callers[idx] & remaining)]
+        ready.sort(key=lambda idx: min(_key(names, node) for node in components[idx]))
+        for idx in ready:
+            level[idx] = max((level[parent] + 1 for parent in callers[idx]), default=0)
+        remaining.difference_update(ready)
+
+    ranks = [level[component_of[idx]] for idx in range(n)]
+    entry_idx = next((i for i, name in enumerate(names) if name == entry_name), None)
+    if entry_idx is not None:
+        ranks[entry_idx] = -1
+
+    preferred = sorted(range(n), key=lambda idx: (ranks[idx], *_key(names, idx)))
+    return _respect_hard_dependencies(preferred=preferred, hard=hard)
+
+
+def _components(graph: list[set[int]]) -> list[list[int]]:
+    """Return strongly connected components of a directed graph."""
+    index = 0
+    indices = [-1] * len(graph)
+    lowlinks = [0] * len(graph)
+    stack: list[int] = []
+    on_stack: set[int] = set()
+    components: list[list[int]] = []
+
+    def visit(node: int) -> None:
+        nonlocal index
+        indices[node] = lowlinks[node] = index
+        index += 1
+        stack.append(node)
+        on_stack.add(node)
+        for neighbour in graph[node]:
+            if indices[neighbour] == -1:
+                visit(neighbour)
+                lowlinks[node] = min(lowlinks[node], lowlinks[neighbour])
+            elif neighbour in on_stack:
+                lowlinks[node] = min(lowlinks[node], indices[neighbour])
+        if lowlinks[node] == indices[node]:
+            component: list[int] = []
+            while True:
+                member = stack.pop()
+                on_stack.remove(member)
+                component.append(member)
+                if member == node:
+                    break
+            components.append(component)
+
+    for node in range(len(graph)):
+        if indices[node] == -1:
+            visit(node)
+    return components
+
+
+def _key(names: list[str], idx: int) -> tuple[str, int]:
+    """Return a stable alphabetical key."""
+    return names[idx], idx
+
+
+def _respect_hard_dependencies(preferred: list[int], hard: list[set[int]]) -> list[int]:
+    """Apply strict definition-time constraints to a preferred order.
+
+    Args:
+        preferred: Indices in preferred order.
+        hard: Definitions that must precede each index.
+
+    Returns:
+        A safe permutation of the preferred indices.
+    """
+    emitted = [False] * len(preferred)
     result: list[int] = []
     remaining = list(preferred)
     while remaining:
-        pick = next(
-            (idx for idx in remaining if all(emitted[d] for d in hard[idx])),
+        available = next(
+            (
+                idx
+                for idx in remaining
+                if all(emitted[dependency] for dependency in hard[idx])
+            ),
             remaining[0],
         )
-        emitted[pick] = True
-        result.append(pick)
-        remaining.remove(pick)
+        emitted[available] = True
+        result.append(available)
+        remaining.remove(available)
     return result
-
-
-def _preferred_order(
-    names: list[str], soft: list[set[int]], entry_name: str | None
-) -> list[int]:
-    """Compute the call-hierarchy preference order (ignoring hard constraints).
-
-    Callers appear before callees (top-down call order).
-
-    Args:
-        names: Definition names, in original order.
-        soft: ``soft[i]`` is the set of indices ``i`` calls (callees).
-        entry_name: Optional entry point name.
-
-    Returns:
-        A permutation of ``range(len(names))``.
-    """
-    n = len(names)
-    emitted = [False] * n
-    order: list[int] = []
-
-    def key(i: int) -> tuple[str, int]:
-        return (names[i], i)
-
-    def emit_preorder(i: int, path: set[int]) -> None:
-        if emitted[i] or i in path:
-            return
-        path.add(i)
-        emitted[i] = True
-        order.append(i)
-        for dep in sorted(soft[i], key=key):
-            emit_preorder(dep, path)
-        path.discard(i)
-
-    entry_idx = next((i for i in range(n) if names[i] == entry_name), None)
-    if entry_idx is not None:
-        emit_preorder(entry_idx, set())
-
-    roots, _ = _build_call_tree(names, soft)
-    for i in roots:
-        emit_preorder(i, set())
-
-    for i in sorted(range(n), key=key):
-        if not emitted[i]:
-            emit_preorder(i, set())
-
-    return order
-
-
-def _build_call_tree(
-    names: list[str], soft: list[set[int]]
-) -> tuple[list[int], list[bool]]:
-    """Find root functions (not called by anyone) in alphabetical order.
-
-    Args:
-        names: Definition names.
-        soft: ``soft[i]`` is the set of indices ``i`` calls (callees).
-
-    Returns:
-        Tuple of (root indices in alphabetical order, is_callee flags).
-    """
-    n = len(names)
-    is_callee = [False] * n
-    for i in range(n):
-        for j in soft[i]:
-            is_callee[j] = True
-
-    def key(i: int) -> tuple[str, int]:
-        return (names[i], i)
-
-    roots = [i for i in range(n) if not is_callee[i]]
-    return sorted(roots, key=key), is_callee

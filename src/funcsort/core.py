@@ -145,6 +145,47 @@ def sort_source(source: str) -> str:
     return code
 
 
+def _sort_classes[NodeT: cst.CSTNode](node: NodeT) -> NodeT:
+    """Reorder methods within every class definition in ``node``'s subtree.
+
+    Recurses through statement containers (never into expressions, where a class
+    cannot appear) and reorders the methods of each ``ClassDef`` body. Nested
+    classes are sorted before their enclosing class. Nodes are only rebuilt when
+    something below them actually changed, so unchanged subtrees are shared.
+
+    Args:
+        node: The node to sort classes within (typically the whole module).
+
+    Returns:
+        ``node`` with every class body method-sorted, or ``node`` itself if
+        nothing moved.
+    """
+    changes: dict[str, object] = {}
+    for name in field_names(node):
+        value = getattr(node, name)
+        if isinstance(value, _CLASS_CONTAINERS):
+            new_value = _sort_classes(value)
+            if new_value is not value:
+                changes[name] = new_value
+        elif type(value) is tuple:
+            new_tuple = tuple(
+                _sort_classes(item) if isinstance(item, _CLASS_CONTAINERS) else item
+                for item in value
+            )
+            if any(old is not new for old, new in zip(value, new_tuple)):
+                changes[name] = new_tuple
+    if changes:
+        node = node.with_changes(**changes)
+
+    if isinstance(node, cst.ClassDef) and isinstance(node.body, cst.IndentedBlock):
+        old_body = list(node.body.body)
+        new_body = _reorder(old_body, entry_name="__init__", blank_count=1)
+        if not _same_sequence(old_body, new_body):
+            block = node.body.with_changes(body=tuple(new_body))
+            node = node.with_changes(body=block)
+    return node
+
+
 def _reorder(
     nodes: Sequence[cst.BaseStatement], entry_name: str, blank_count: int
 ) -> list[cst.BaseStatement]:
@@ -174,6 +215,11 @@ def _reorder(
             result.append(nodes[i])
             i += 1
     return result
+
+
+def _same_sequence(a: Sequence[cst.CSTNode], b: Sequence[cst.CSTNode]) -> bool:
+    """Return whether two node lists are the identical objects in the same order."""
+    return len(a) == len(b) and all(x is y for x, y in zip(a, b))
 
 
 def _sort_run(
@@ -216,49 +262,3 @@ def _sort_run(
         order = order_run(names, hard, soft, entry_name)
 
     return rebuild_run(run, order, blank_count, preserve_first_leading=at_start)
-
-
-def _sort_classes[NodeT: cst.CSTNode](node: NodeT) -> NodeT:
-    """Reorder methods within every class definition in ``node``'s subtree.
-
-    Recurses through statement containers (never into expressions, where a class
-    cannot appear) and reorders the methods of each ``ClassDef`` body. Nested
-    classes are sorted before their enclosing class. Nodes are only rebuilt when
-    something below them actually changed, so unchanged subtrees are shared.
-
-    Args:
-        node: The node to sort classes within (typically the whole module).
-
-    Returns:
-        ``node`` with every class body method-sorted, or ``node`` itself if
-        nothing moved.
-    """
-    changes: dict[str, object] = {}
-    for name in field_names(node):
-        value = getattr(node, name)
-        if isinstance(value, _CLASS_CONTAINERS):
-            new_value = _sort_classes(value)
-            if new_value is not value:
-                changes[name] = new_value
-        elif type(value) is tuple:
-            new_tuple = tuple(
-                _sort_classes(item) if isinstance(item, _CLASS_CONTAINERS) else item
-                for item in value
-            )
-            if any(old is not new for old, new in zip(value, new_tuple)):
-                changes[name] = new_tuple
-    if changes:
-        node = node.with_changes(**changes)
-
-    if isinstance(node, cst.ClassDef) and isinstance(node.body, cst.IndentedBlock):
-        old_body = list(node.body.body)
-        new_body = _reorder(old_body, entry_name="__init__", blank_count=1)
-        if not _same_sequence(old_body, new_body):
-            block = node.body.with_changes(body=tuple(new_body))
-            node = node.with_changes(body=block)
-    return node
-
-
-def _same_sequence(a: Sequence[cst.CSTNode], b: Sequence[cst.CSTNode]) -> bool:
-    """Return whether two node lists are the identical objects in the same order."""
-    return len(a) == len(b) and all(x is y for x, y in zip(a, b))

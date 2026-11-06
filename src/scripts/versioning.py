@@ -18,6 +18,18 @@ def bump_major() -> None:
     set_new_version(major + 1, 0, 0)
 
 
+def bump_minor() -> None:
+    """Add one to the minor version."""
+    major, minor, _ = get_current_version()
+    set_new_version(major, minor + 1, 0)
+
+
+def bump_patch() -> None:
+    """Add one to the patch version."""
+    major, minor, patch = get_current_version()
+    set_new_version(major, minor, patch + 1)
+
+
 def get_current_version() -> tuple[int, int, int]:
     """Fetch the current version of the package.
 
@@ -99,18 +111,6 @@ def set_new_version(major: int, minor: int, patch: int) -> None:
     subprocess.run(["git", "push", "--tags"], check=True)
 
     print(f"✓ Released v{version}")
-
-
-def bump_minor() -> None:
-    """Add one to the minor version."""
-    major, minor, _ = get_current_version()
-    set_new_version(major, minor + 1, 0)
-
-
-def bump_patch() -> None:
-    """Add one to the patch version."""
-    major, minor, patch = get_current_version()
-    set_new_version(major, minor, patch + 1)
 
 
 if __name__ == "__main__":
