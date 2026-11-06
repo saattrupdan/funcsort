@@ -1,194 +1,366 @@
-"""Public-interface ordering scenarios with exact expected definition orders."""
+"""Public-interface ordering scenarios with complete Python definitions."""
 
 import ast
 import itertools
 import typing as t
+from dataclasses import dataclass
 
 import pytest
 
 from funcsort.core import sort_source
 
-# Type alias for a named ordering scenario
-_Scenario = tuple[str, dict[str, str], tuple[str, ...]]
+
+@dataclass(frozen=True)
+class _Scenario:
+    """A complete input module and its expected definition sequence."""
+
+    name: str
+    blocks: tuple[str, ...]
+    expected: tuple[str, ...]
+    permute: bool = True
+    xfail: str | None = None
 
 
-SCENARIOS: tuple[_Scenario, ...] = (
-    (
+SCENARIOS = (
+    _Scenario(
         "chain",
-        {"leaf": "pass", "middle": "leaf()", "root": "middle()"},
+        (
+            "def leaf():\n    return 1",
+            "def middle():\n    return leaf()",
+            "def root():\n    return middle()",
+        ),
         ("root", "middle", "leaf"),
     ),
-    (
-        "siblings_breadth_first",
-        {"parse": "pass", "load": "parse()", "save": "pass", "main": "load(); save()"},
+    _Scenario(
+        "confirmed_main_siblings",
+        (
+            "def parse():\n    return 1",
+            "def load():\n    return parse()",
+            "def save():\n    return 2",
+            "def main():\n    load()\n    save()",
+        ),
         ("main", "load", "save", "parse"),
+        xfail="Confirmed sibling order is not met.",
     ),
-    (
-        "independent_roots",
-        {
-            "alpha_helper": "pass",
-            "alpha": "alpha_helper()",
-            "beta_helper": "pass",
-            "beta": "beta_helper()",
-        },
+    _Scenario(
+        "independent_alpha_beta",
+        (
+            "def alpha_helper():\n    return 1",
+            "def alpha():\n    return alpha_helper()",
+            "def beta_helper():\n    return 2",
+            "def beta():\n    return beta_helper()",
+        ),
         ("alpha", "beta", "alpha_helper", "beta_helper"),
+        xfail="Confirmed independent-root order is not met.",
     ),
-    (
-        "shared_helper",
-        {
-            "shared": "pass",
-            "alpha": "shared()",
-            "beta": "shared()",
-            "main": "alpha(); beta()",
-        },
-        ("main", "alpha", "beta", "shared"),
+    _Scenario(
+        "shared_helper_unequal_depths",
+        (
+            "def shared():\n    return 1",
+            "def shallow():\n    return shared()",
+            "def deep():\n    return shared()",
+            "def branch():\n    return deep()",
+            "def main():\n    shallow()\n    branch()",
+        ),
+        ("main", "branch", "shallow", "deep", "shared"),
+        xfail="Confirmed breadth order is not met.",
     ),
-    (
+    _Scenario(
         "diamond",
-        {
-            "finish": "pass",
-            "left": "finish()",
-            "right": "finish()",
-            "start": "left(); right()",
-        },
+        (
+            "def finish():\n    return 1",
+            "def left():\n    return finish()",
+            "def right():\n    return finish()",
+            "def start():\n    left()\n    right()",
+        ),
         ("start", "left", "right", "finish"),
+        xfail="Confirmed sibling order is not met.",
     ),
-    (
-        "three_levels_sibling_priority",
-        {
-            "deep": "pass",
-            "branch": "deep()",
-            "sibling": "pass",
-            "root": "branch(); sibling()",
-        },
+    _Scenario(
+        "three_level_siblings",
+        (
+            "def deep():\n    return 1",
+            "def branch():\n    return deep()",
+            "def sibling():\n    return 2",
+            "def root():\n    branch()\n    sibling()",
+        ),
         ("root", "branch", "sibling", "deep"),
+        xfail="Confirmed sibling order is not met.",
     ),
-    (
-        "alphabetical_roots",
-        {"zeta": "pass", "alpha": "pass", "middle": "pass"},
+    _Scenario(
+        "alphabetical_independent_roots",
+        (
+            "def zeta():\n    return 1",
+            "def alpha():\n    return 2",
+            "def middle():\n    return 3",
+        ),
         ("alpha", "middle", "zeta"),
     ),
-    ("entry_point", {"helper": "pass", "main": "helper()"}, ("main", "helper")),
-    (
+    _Scenario(
+        "main_entry_point",
+        ("def helper():\n    return 1", "def main():\n    return helper()"),
+        ("main", "helper"),
+    ),
+    _Scenario(
+        "init_entry_point",
+        ("def helper():\n    return 1", "def __init__():\n    return helper()"),
+        ("__init__", "helper"),
+    ),
+    _Scenario(
         "caller_without_entry",
-        {"callee": "pass", "caller": "callee()"},
+        ("def callee():\n    return 1", "def caller():\n    return callee()"),
         ("caller", "callee"),
     ),
-    (
+    _Scenario(
         "underscore_helper",
-        {"_helper": "pass", "public": "_helper()"},
+        ("def _helper():\n    return 1", "def public():\n    return _helper()"),
         ("public", "_helper"),
     ),
-    ("mutual_cycle", {"zebra": "alpha()", "alpha": "zebra()"}, ("alpha", "zebra")),
-    (
-        "three_node_cycle",
-        {"gamma": "beta()", "beta": "alpha()", "alpha": "gamma()"},
-        ("alpha", "beta", "gamma"),
-    ),
-    (
-        "async_chain",
-        {
-            "fetch_data": "pass",
-            "prepare": "await fetch_data()",
-            "main": "await prepare()",
-        },
-        ("main", "prepare", "fetch_data"),
-    ),
-    (
-        "methods_self_calls",
-        {
-            "unused": "pass",
-            "work": "self.finish()",
-            "finish": "pass",
-            "__init__": "self.work()",
-        },
-        ("__init__", "work", "finish", "unused"),
-    ),
-    (
-        "class_method_chain",
-        {"z_finish": "pass", "b_work": "self.z_finish()", "a_start": "self.b_work()"},
-        ("a_start", "b_work", "z_finish"),
-    ),
-    (
-        "callback_sorted_key",
-        {"alpha": "pass", "zebra": "sorted([], key=alpha)"},
-        ("zebra", "alpha"),
-    ),
-    ("callback_map", {"alpha": "pass", "zebra": "map(alpha, [])"}, ("zebra", "alpha")),
-    (
-        "callback_executor",
-        {"alpha": "pass", "zebra": "executor.submit(alpha)"},
-        ("zebra", "alpha"),
-    ),
-    (
-        "default_requires_definition",
-        {"factory": "pass", "consumer": "def unavailable(): pass"},
-        ("consumer", "factory"),
-    ),
-    (
-        "annotation_requires_definition",
-        {"Model": "pass", "consumer": "pass"},
-        ("Model", "consumer"),
-    ),
-    ("decorator_dependency", {"decorate": "pass", "use": "pass"}, ("decorate", "use")),
-    ("base_before_subclass", {"Child": "pass", "Base": "pass"}, ("Base", "Child")),
-    ("metaclass_reference", {"Meta": "pass", "Thing": "pass"}, ("Meta", "Thing")),
-    (
-        "callee_name_beats_alphabetical",
-        {"zebra": "pass", "alpha": "pass", "caller": "zebra()"},
-        ("alpha", "caller", "zebra"),
-    ),
-    (
-        "attribute_call",
-        {"worker": "pass", "caller": "service.worker()"},
-        ("caller", "worker"),
-    ),
-    (
-        "independent_pairs",
-        {"zebra": "pass", "alpha": "pass", "beta": "pass", "gamma": "pass"},
-        ("alpha", "beta", "gamma", "zebra"),
-    ),
-    (
-        "external_names_ignored",
-        {"zebra": "external()", "alpha": "pass"},
+    _Scenario(
+        "mutual_cycle",
+        ("def zebra():\n    return alpha()", "def alpha():\n    return zebra()"),
         ("alpha", "zebra"),
     ),
-    (
-        "duplicate_property_names",
-        {"first": "pass", "second": "pass"},
-        ("first", "second"),
+    _Scenario(
+        "three_node_cycle",
+        (
+            "def gamma():\n    return beta()",
+            "def beta():\n    return alpha()",
+            "def alpha():\n    return gamma()",
+        ),
+        ("alpha", "beta", "gamma"),
+        xfail="Confirmed alphabetical cycle order is not met.",
     ),
-    (
-        "main_chain",
-        {"leaf": "pass", "middle": "leaf()", "main": "middle()"},
-        ("main", "middle", "leaf"),
+    _Scenario(
+        "async_await_chain",
+        (
+            "async def fetch_data():\n    return 1",
+            "async def prepare():\n    return await fetch_data()",
+            "async def main():\n    return await prepare()",
+        ),
+        ("main", "prepare", "fetch_data"),
+    ),
+    _Scenario(
+        "real_class_self_methods",
+        (
+            """class Worker:
+    def unused(self):
+        return 1
+
+    def finish(self):
+        return 2
+
+    def work(self):
+        return self.finish()
+
+    def __init__(self):
+        self.work()""",
+        ),
+        ("Worker", "Worker.__init__", "Worker.unused", "Worker.work", "Worker.finish"),
+        xfail="Confirmed method roots precede helpers.",
+    ),
+    _Scenario(
+        "class_method_chain",
+        (
+            """class Worker:
+    def z_finish(self):
+        return 1
+
+    def b_work(self):
+        return self.z_finish()
+
+    def a_start(self):
+        return self.b_work()""",
+        ),
+        ("Worker", "Worker.a_start", "Worker.b_work", "Worker.z_finish"),
+    ),
+    _Scenario(
+        "callback_sorted_key",
+        (
+            "def alpha(value):\n    return value",
+            "def zebra(values):\n    return sorted(values, key=alpha)",
+        ),
+        ("zebra", "alpha"),
+        xfail="Confirmed callback dependency is not ordered yet.",
+    ),
+    _Scenario(
+        "callback_map",
+        (
+            "def alpha(value):\n    return value",
+            "def zebra(values):\n    return map(alpha, values)",
+        ),
+        ("zebra", "alpha"),
+        xfail="Confirmed callback dependency is not ordered yet.",
+    ),
+    _Scenario(
+        "callback_executor",
+        (
+            "def alpha(value):\n    return value",
+            "def zebra(executor):\n    return executor.submit(alpha, 1)",
+        ),
+        ("zebra", "alpha"),
+        xfail="Confirmed callback dependency is not ordered yet.",
+    ),
+    _Scenario(
+        "default_factory_safety",
+        (
+            "def factory():\n    return 1",
+            "def consumer(value=factory()):\n    return value",
+        ),
+        ("factory", "consumer"),
+        permute=False,
+    ),
+    _Scenario(
+        "annotation_class_safety",
+        (
+            "class Model:\n    pass",
+            "def consumer(value: Model) -> Model:\n    return value",
+        ),
+        ("Model", "consumer"),
+        permute=False,
+    ),
+    _Scenario(
+        "decorator_definition_safety",
+        (
+            "def decorate(function):\n    return function",
+            "@decorate\ndef use():\n    return 1",
+        ),
+        ("decorate", "use"),
+        permute=False,
+    ),
+    _Scenario(
+        "base_class_safety",
+        ("class Base:\n    pass", "class Child(Base):\n    pass"),
+        ("Base", "Child"),
+        permute=False,
+    ),
+    _Scenario(
+        "metaclass_safety",
+        ("class Meta(type):\n    pass", "class Thing(metaclass=Meta):\n    pass"),
+        ("Meta", "Thing"),
+        permute=False,
+    ),
+    _Scenario(
+        "class_body_default_safety",
+        ("def factory():\n    return 1", "class Container:\n    value = factory()"),
+        ("factory", "Container"),
+        permute=False,
+    ),
+    _Scenario(
+        "property_getter_setter_chain",
+        (
+            """class Item:
+    @property
+    def value(self):
+        return self._value
+
+    @value.setter
+    def value(self, value):
+        self._value = value""",
+        ),
+        ("Item", "Item.value", "Item.value"),
+        permute=False,
+    ),
+    _Scenario(
+        "property_getter_setter_precedes_user",
+        (
+            """class Item:
+    def display(self):
+        return self.value
+
+    @property
+    def value(self):
+        return 1
+
+    @value.setter
+    def value(self, value):
+        self._value = value""",
+        ),
+        ("Item", "Item.display", "Item.value", "Item.value"),
+        permute=False,
+    ),
+    _Scenario(
+        "mixed_function_and_class_calls",
+        (
+            "def finish():\n    return 1",
+            "class Worker:\n    def run(self):\n        return finish()",
+            "def main():\n    Worker().run()",
+        ),
+        ("main", "Worker", "Worker.run", "finish"),
+    ),
+    _Scenario(
+        "external_attribute_call_ignored",
+        (
+            "def worker():\n    return 1",
+            "def caller(service):\n    return service.worker()",
+        ),
+        ("caller", "worker"),
+    ),
+    _Scenario(
+        "nested_function_order_preserved",
+        (
+            """def outer():
+    def z_inner():
+        return a_inner()
+
+    def a_inner():
+        return 1
+
+    return z_inner()""",
+            "def main():\n    return outer()",
+        ),
+        ("main", "outer"),
+    ),
+    _Scenario(
+        "statement_anchor_and_main_guard",
+        (
+            "def zebra():\n    return 1",
+            "VALUE = 1",
+            "def beta():\n    return 2",
+            "def alpha():\n    return 3",
+            "if __name__ == '__main__':\n    beta()",
+        ),
+        ("zebra", "alpha", "beta"),
+        permute=False,
+    ),
+    _Scenario(
+        "class_static_methods",
+        (
+            """class Service:
+    @staticmethod
+    def make():
+        return Service.build()
+
+    @classmethod
+    def build(cls):
+        return cls()""",
+        ),
+        ("Service", "Service.make", "Service.build"),
+    ),
+    _Scenario(
+        "unused_root_before_helpers",
+        (
+            "def helper():\n    return 1",
+            "def alpha():\n    return helper()",
+            "def unused():\n    return 2",
+        ),
+        ("alpha", "unused", "helper"),
+        xfail="Confirmed roots precede helper definitions.",
+    ),
+    _Scenario(
+        "decorated_class_method",
+        (
+            "def decorate(function):\n    return function",
+            "class Worker:\n    @decorate\n    def run(self):\n        return 1",
+        ),
+        ("decorate", "Worker", "Worker.run"),
+        permute=False,
     ),
 )
 
 
-_XFAIL_REASONS = {
-    "siblings_breadth_first": ("Ordering currently traverses call trees depth-first."),
-    "independent_roots": (
-        "Root groups currently emit descendants before the next root."
-    ),
-    "shared_helper": (
-        "Shared callees emit during the first root's depth-first traversal."
-    ),
-    "diamond": ("Shared callees emit during the first branch's depth-first traversal."),
-    "three_node_cycle": (
-        "Cycles currently preserve traversal order, not alphabetical order."
-    ),
-    "three_levels_sibling_priority": (
-        "Ordering currently traverses call trees depth-first."
-    ),
-    "callback_sorted_key": "Callback names are not ordering dependencies yet.",
-    "callback_map": "Callback names are not ordering dependencies yet.",
-    "callback_executor": "Callback names are not ordering dependencies yet.",
-}
-
-
 def test_module_statements_anchor_definition_runs() -> None:
-    """Sort definition runs independently without moving anchored assignments."""
+    """Sort definition runs independently without moving anchored statements."""
     source = """def zebra():
     pass
 
@@ -202,6 +374,10 @@ def beta():
 
 def alpha():
     pass
+
+
+if __name__ == "__main__":
+    alpha()
 """
     expected = """def zebra():
     pass
@@ -216,80 +392,114 @@ def alpha():
 
 def beta():
     pass
+
+
+if __name__ == "__main__":
+    alpha()
 """
     assert sort_source(source) == expected
 
 
-@pytest.mark.parametrize(
-    ("scenario_name", "definitions", "expected"),
-    SCENARIOS,
-    ids=[case[0] for case in SCENARIOS],
-)
-def test_scenario_is_idempotent_and_preserves_definitions(
-    scenario_name: str, definitions: dict[str, str], expected: tuple[str, ...]
-) -> None:
-    """Check sorting is stable and does not lose or alter definition bodies."""
-    source = _source(definitions, expected)
-    sorted_source = sort_source(source)
-    assert sort_source(sorted_source) == sorted_source
-    before = sorted(ast.dump(node) for node in ast.parse(source).body)
-    after = sorted(ast.dump(node) for node in ast.parse(sorted_source).body)
-    assert after == before
+@pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda case: case.name)
+def test_scenario_invariants(scenario: _Scenario) -> None:
+    """Every permutation compiles, preserves AST content, and sorts idempotently."""
+    for arrangement in _arrangements(scenario):
+        source = _source(scenario, arrangement)
+        compile(source, f"<scenario:{scenario.name}:input>", "exec")
+        sorted_source = sort_source(source)
+        compile(sorted_source, f"<scenario:{scenario.name}:output>", "exec")
+        assert _normalised_ast(sorted_source) == _normalised_ast(source), (
+            scenario.name,
+            arrangement,
+        )
+        assert sort_source(sorted_source) == sorted_source, (scenario.name, arrangement)
 
 
-def _source(definitions: dict[str, str], order: t.Iterable[str]) -> str:
-    """Build a source module in the requested definition order.
+def _arrangements(scenario: _Scenario) -> t.Iterable[tuple[str, ...]]:
+    if scenario.permute:
+        return itertools.permutations(scenario.blocks)
+    return (scenario.blocks,)
 
-    Args:
-        definitions: Function bodies indexed by definition name.
-        order: Names to emit in source order.
+
+def _normalised_ast(source: str) -> str:
+    tree = ast.parse(source)
+
+    def normalise_scope(node: ast.Module | ast.ClassDef) -> None:
+        node.body = _definition_runs(node.body)
+        for child in node.body:
+            if isinstance(child, ast.ClassDef):
+                normalise_scope(child)
+
+    normalise_scope(tree)
+    return ast.dump(tree, include_attributes=False)
+
+
+def _definition_runs(nodes: list[ast.stmt]) -> list[ast.stmt]:
+    """Canonicalise reorderable definition runs without changing nested bodies.
 
     Returns:
-        A source module containing the requested definitions.
+        Nodes with only contiguous definition runs canonicalised.
     """
-    blocks = []
-    for name in order:
-        body = definitions[name]
-        blocks.append(f"def {name}():\n    {body}")
+    result: list[ast.stmt] = []
+    run: list[ast.stmt] = []
+
+    def flush() -> None:
+        result.extend(sorted(run, key=ast.dump))
+        run.clear()
+
+    for node in nodes:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            run.append(node)
+        else:
+            flush()
+            result.append(node)
+    flush()
+    return result
+
+
+def _source(scenario: _Scenario, blocks: tuple[str, ...]) -> str:
+    """Join complete definitions and explicitly anchored statements.
+
+    Returns:
+        A compilable module assembled from the supplied blocks.
+    """
     return "\n\n\n".join(blocks) + "\n"
 
 
-ORDERING_CASES = tuple(
-    pytest.param(
-        *case,
-        marks=pytest.mark.xfail(reason=_XFAIL_REASONS[case[0]], raises=AssertionError),
-    )
-    if case[0] in _XFAIL_REASONS
-    else pytest.param(*case)
-    for case in SCENARIOS
-)
-
-
 @pytest.mark.parametrize(
-    ("scenario_name", "definitions", "expected"),
-    ORDERING_CASES,
-    ids=[case[0] for case in SCENARIOS],
+    "scenario",
+    [
+        pytest.param(
+            case,
+            marks=pytest.mark.xfail(
+                reason=case.xfail, strict=True, raises=AssertionError
+            ),
+        )
+        if case.xfail
+        else case
+        for case in SCENARIOS
+    ],
+    ids=lambda case: case.name,
 )
-def test_scenario_order(
-    scenario_name: str, definitions: dict[str, str], expected: tuple[str, ...]
-) -> None:
-    """Check named ordering scenarios through the public source interface."""
-    for input_order in _bounded_orders(tuple(definitions)):
-        source = _source(definitions, input_order)
-        assert _ordered_names(sort_source(source)) == expected, scenario_name
+def test_scenario_order(scenario: _Scenario) -> None:
+    """Check full definition order over all safe input permutations."""
+    for arrangement in _arrangements(scenario):
+        source = _source(scenario, arrangement)
+        compile(source, f"<scenario:{scenario.name}:input>", "exec")
+        actual = _definition_order(sort_source(source))
+        assert actual == scenario.expected, (scenario.name, arrangement, actual)
 
 
-def _bounded_orders(names: tuple[str, ...]) -> list[tuple[str, ...]]:
-    """Return exhaustive permutations for small scenarios and deterministic samples."""
-    if len(names) <= 4:
-        return list(itertools.permutations(names))
-    return [names, tuple(reversed(names)), tuple(sorted(names))]
-
-
-def _ordered_names(source: str) -> tuple[str, ...]:
-    """Return top-level function names in source order."""
-    return tuple(
-        node.name
-        for node in ast.parse(source).body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-    )
+def _definition_order(source: str) -> tuple[str, ...]:
+    """Return ordered module and class definition names, retaining duplicates."""
+    result: list[str] = []
+    for node in ast.parse(source).body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            result.append(node.name)
+            if isinstance(node, ast.ClassDef):
+                result.extend(
+                    f"{node.name}.{member.name}"
+                    for member in node.body
+                    if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef))
+                )
+    return tuple(result)
